@@ -1,76 +1,47 @@
-# Claude Project Guide: Netflix + Max Merger Analysis
+# CLAUDE.md: Streaming Merger Capstone (Netflix + Max)
 
-## Project Overview
-7-page Streamlit app analyzing a hypothetical Netflix + Warner Bros (Max) merger using data from 6 streaming platforms.
+## What this repo is
+A 7-page Streamlit app that analyzes a hypothetical Netflix + Warner Bros (Max) merger using catalogs + credits from 6 platforms.
 
-## Architecture
+## Source of truth docs (read as needed)
+- PROJECT_SPEC.md: page-by-page requirements and acceptance criteria
+- PROGRESS_LOG.md: current week, what is done, what is next
+- src/config.py: paths, platform keys, constants, model params
 
-### Data Pipeline (4 Tiers)
-```
-data/raw/           → Original CSVs (12 files, immutable)
-data/interim/       → Cleaned parquet files (12 files)
-data/processed/     → Merged datasets (4 files: merged_titles, all_platforms_titles, + credits)
-data/precomputed/   → Heavy artifacts (embeddings, similarity, UMAP, stats, analysis, network)
-```
+Use progressive disclosure: only open the files you need for the task at hand, do not ingest everything by default. Keep context lean. 
 
-### Code Organization
-```
-src/data/      → Loading, filtering, feature engineering
-src/models/    → ALL ML/NLP (similarity, embeddings, clustering, recommendations, predictor)
-src/analysis/  → Business logic (overlap detection, gap analysis, platform DNA)
-src/network/   → Graph building, person profiles
-src/viz/       → Charts, cards, tables
-src/ui/        → Global filters, session state
-```
+## Non-negotiables
+- Keep `data/raw/` immutable. Do not edit raw CSVs.
+- Prefer reproducing artifacts via scripts in `scripts/` over manual notebook steps.
+- All platform keys must be exactly: `netflix`, `max`, `disney`, `prime`, `paramount`, `appletv`.
+- Any expensive computation should be precomputed offline into `data/precomputed/` and loaded in the app.
 
-### Platform Keys (Standardized)
-Use these everywhere: `netflix`, `max`, `disney`, `prime`, `paramount`, `appletv`
+## Repo structure (mental model)
+- `scripts/`: builds data artifacts (raw -> interim -> processed -> precomputed)
+- `src/`: reusable code (loading, filtering, ML, analysis, viz, UI)
+- `pages/`: Streamlit pages (thin pages that call into `src/`)
+- `models/`: serialized model objects only (vectorizer, umap, predictor)
 
-## Coding Conventions
+## How to work in this repo (workflow)
+When implementing a task:
+1) State what files you will touch.
+2) Make the smallest correct change.
+3) Run the quickest relevant check (script or test).
+4) Update PROGRESS_LOG.md with what changed and what is next.
 
-### Imports
-```python
-# Always import from src
-from src.config import PLATFORMS, PROCESSED_DIR, PRECOMPUTED_DIR
-from src.data.loaders import load_merged_titles
-from src.ui.filters import render_global_filters
-```
+If requirements are unclear, consult PROJECT_SPEC.md before inventing new behavior.
 
-### Caching
-```python
-# Use @st.cache_data for DataFrames/arrays
-@st.cache_data
-def load_merged_titles():
-    return pd.read_parquet(PROCESSED_DIR / "merged_titles.parquet")
+## Local commands (common)
+- Run app: `streamlit run Home.py`
+- Run tests: `pytest -q`
+- Run pipeline: `bash scripts/run_pipeline.sh` (or run scripts 01 -> 09 in order)
 
-# Use @st.cache_resource for ML models
-@st.cache_resource
-def load_tfidf_model():
-    return joblib.load(MODELS_DIR / "tfidf_vectorizer.pkl")
-```
+## Streamlit performance rules
+- DataFrames/arrays: cache with `st.cache_data` (in `src/data/loaders.py`)
+- Models/resources: cache with `st.cache_resource` (in `src/models/loaders.py`)
+- Avoid re-reading parquet/npz in page code. Page code should call loader functions.
 
-### Global Filters (Every Page)
-```python
-# In every page's main function:
-from src.ui.filters import render_global_filters
-from src.ui.session import get_filtered_data
-
-filters = render_global_filters()  # Sidebar
-df = load_merged_titles()
-filtered_df = get_filtered_data(df, filters)
-```
-
-## File Conventions
-- Scripts: `01_clean_raw_data.py` (numbered, action verbs)
-- Modules: `loaders.py`, `overlap_detector.py` (lowercase_with_underscores)
-- Parquet files: `merged_titles.parquet`, `umap_coords.parquet` (descriptive)
-
-## Development Flow
-1. **Week 1**: Data pipeline (`scripts/01_clean_raw_data.py`, `02_merge_platforms.py`)
-2. **Weeks 2-10**: Build artifacts as pages are developed (see `scripts/` for numbered pipeline)
-3. **Week 11**: Integration, optimization, testing
-
-## Key References
-- **PROJECT_SPEC.md**: Detailed page-by-page requirements
-- **PROGRESS_LOG.md**: Weekly progress tracking
-- **BRAINSTORM.md**: Original comprehensive plan
+## What not to do
+- Do not add lots of style/lint rules here. Keep this file short and stable.
+- Do not duplicate specs here. Point to PROJECT_SPEC.md instead.
+- Do not generate new “one-off” folders unless there is a clear need.

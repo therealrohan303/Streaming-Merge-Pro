@@ -1,233 +1,225 @@
-# Project Specification: Netflix + Max Merger Streamlit App
+# PROJECT_SPEC.md: Netflix + Max Merger Streamlit App
 
-## Overview
-7-page Streamlit application analyzing a hypothetical Netflix + Warner Bros (Max) merger. Each page serves a specific analytical purpose.
+## 1) Goal
+Build a 7-page Streamlit app that analyzes a hypothetical Netflix + Warner Bros (Max) merger.
+Primary outputs: searchable catalog, recommendation tools, competitive comparisons, merger overlap + gap insights, and cast/crew network exploration.
 
----
+## 2) Datasets and artifact contracts
 
-## Page 0: Home (Home.py)
+### 2.1 Canonical processed datasets (must exist)
+Located in `data/processed/`:
+- `merged_titles.parquet`: Netflix + Max combined (PRIMARY for most pages)
+- `merged_credits.parquet`: Netflix + Max credits
+- `all_platforms_titles.parquet`: all 6 platforms (PRIMARY for comparisons vs competitors)
+- `all_platforms_credits.parquet`: all 6 platforms credits
 
-**Purpose:** High-level merger dashboard
+### 2.2 Precomputed artifacts (only if needed by pages)
+Located in `data/precomputed/`:
+- `embeddings/`: sentence-embedding vectors + id mapping
+- `similarity/`: TF-IDF matrix and/or top-k similarity table
+- `dimensionality_reduction/`: UMAP 2D coordinates
+- `platform_stats/`: summary tables used by Home + Comparisons
+- `strategic_analysis/`: overlap + gap analysis tables
+- `network/`: edges + person-level aggregations
 
-**Requirements:**
-- Hero metrics (4 columns): Combined catalog size, avg IMDb, cast/crew count, genre count
-- Merger impact (3 columns):
-  - Volume boost: Bar chart Netflix vs Max vs Combined
-  - Quality shift: IMDb histogram (Netflix-only vs Combined)
-  - Genre expansion: Top genres comparison
-- Top titles: 2 tabs (By Rating, By Popularity), grid layout, clickable cards
-- Content timeline: Stacked area chart by decade
-- Geographic footprint: World map + top 10 countries bar chart
-- Quick navigation cards to other pages
+### 2.3 Minimum required columns (titles)
+Every titles table used in the app must include at least:
+- `id` (stable unique id)
+- `title`
+- `platform` (one of the platform keys)
+- `type` (Movie/Show)
+- `release_year`
+- `genres` (list-like or delimiter string, but consistent)
+- `imdb_score` (float, can be null)
+- `tmdb_popularity` (float, can be null)
+- `description` (string, can be empty but not null if possible)
+- Optional but recommended: `runtime`, `age_certification`, `country` or `production_countries`
 
----
+### 2.4 Minimum required columns (credits)
+Every credits table used in the app must include at least:
+- `title_id` (joins to titles `id`)
+- `person_id`
+- `name`
+- `role` (actor/director/etc)
+- Optional: `character`, `department`, `job`
 
-## Page 1: Explore Catalog (pages/01_Explore_Catalog.py)
+If raw data is missing fields, standardize during `scripts/01_clean_raw_data.py`.
 
-**Purpose:** Searchable database with similarity recommendations
+## 3) Global UX requirements (all pages)
 
-**Requirements:**
-- Search & filter bar:
-  - Autocomplete search
-  - Type (Movies/Shows), year range, min IMDb, genre multi-select
-  - Sort by dropdown, results count
-- Two-panel layout:
-  - Left: Results list (paginated, 50 per page)
-  - Right: Detail view with full metadata
-- Cast & crew teaser (collapsed expander)
-- **Similar Titles (KEY FEATURE):**
-  - TF-IDF + genre overlap similarity
-  - Toggle scope: Netflix+Max only vs All platforms
-  - Top 10 recommendations with similarity scores
-  - Clicking loads new title in detail view
-
----
-
-## Page 2: Platform Comparisons (pages/02_Platform_Comparisons.py)
-
-**Purpose:** Competitive analysis vs other platforms
-
-**Requirements:**
-- Platform selector: Netflix+Max locked, choose up to 3 competitors
-- Toggle: Absolute vs Relative (normalized) mode
-- Volume comparison: Grouped bar chart + table
-- Quality comparison: Box plot + threshold table
-- **Unified Genre Analysis (KEY FEATURE):**
-  - Heatmap: Top 15 genres × selected platforms
-  - Drill-down on click: Count, avg IMDb, top 3 titles, "Leader" badge
-- Streamlined content profile: Age certification, international share, era focus
-- Market positioning matrix: Scatter plot (size vs quality)
-
----
-
-## Page 3: Platform DNA (pages/03_Platform_DNA.py)
-
-**Purpose:** Explain platform identity through patterns
-
-**Requirements:**
-- Platform personality profile cards:
-  - Genre mix donut chart
-  - Era focus by decade
-  - Quality tier indicator
-  - 3-5 defining traits
-  - Side-by-side comparison option
-- **Content Landscape Visualization (KEY FEATURE):**
-  - UMAP 2D plot (each point = title, colored by platform)
-  - Clickable areas show sample titles
-  - Interpretation text for overlaps/divergences
-- "What Platform Are You?" matcher:
-  - User inputs: Top genres, preference sliders
-  - Output: Best match platform, bar chart, explanation
-
----
-
-## Page 4: Discovery Engine (pages/04_Discovery_Engine.py)
-
-**Purpose:** Full recommendation toolkit (3 entry points)
-
-**Requirements:**
-- **Tab 1: Similar to a Title**
-  - Autocomplete search
-  - Scope selector, result count control, quality filter
-  - "Why similar?" expanders
-- **Tab 2: Preference-Based**
-  - Inputs: Genres, min IMDb, type, runtime, year range
-  - Popular vs hidden gems slider
-  - Platform scope
-  - Ranked list with fit scores
-- **Tab 3: Vibe Search (NLP)**
-  - Text prompt input
-  - Sentence embeddings over descriptions
-  - Top matches with relevance scores
-- Session-based recommendation history (last 10 sets)
-
----
-
-## Page 5: Strategic Insights (pages/05_Strategic_Insights.py)
-
-**Purpose:** Executive-style merger analysis
-
-**Requirements:**
-- Merger value dashboard: Genre gap coverage, overlap rate, quality lift, diversity metric
-- **Content Overlap Analysis (KEY FEATURE):**
-  - Identify Netflix-Max overlaps
-  - Overlap rates by genre, type, certification, decade
-  - Audit table with confidence scores
-- **Gap Analysis Tool:**
-  - Choose perspective (merged entity or competitor)
-  - Identify gaps: Low share genres, low quality areas, era gaps, geographic gaps
-  - Prioritized gap list with severity labels
-- Competitive positioning summary:
-  - Where competitor leads, where merged entity leads
-  - Battleground genres, white space areas
-  - Strategic recommendation text
-- Market impact simulation (optional): Market share charts, HHI calculation
-
----
-
-## Page 6: Interactive Lab (pages/06_Interactive_Lab.py)
-
-**Purpose:** High-engagement creative features
-
-**Requirements:**
-- **Feature 1: Build Your Streaming Service (Draft Game)**
-  - Budget + draft titles from dataset
-  - Title value function (IMDb + popularity + recency)
-  - Live dashboard: Spend remaining, avg IMDb, genre distribution, diversity score
-  - Compare your service vs Netflix+Max
-- **Feature 2: Hypothetical Title Predictor**
-  - User inputs: Description, type, genres, runtime, year, country, certification, budget tier
-  - Predict IMDb score range with confidence band
-  - Recommend directors/actors based on genre track record
-  - Suggest best-fit platform
-- **Feature 3: Insight Generator**
-  - Select scope (platform, genre, decade, all)
-  - Generate 5-8 data-backed insights
-  - "Surprise me" random insight button
-
----
-
-## Page 7: Cast & Crew Network (pages/07_Cast_Crew_Network.py)
-
-**Purpose:** Explore people behind content
-
-**Requirements:**
-- Person search & profile:
-  - Autocomplete search by name
-  - Filters: Role (actor/director), min title count, platform scope
-  - Profile: Key stats (avg IMDb, votes, career span, top genre)
-  - Top collaborators list (clickable)
-  - Filmography table (sortable, paginated)
-  - Career trend line (IMDb over time)
-- Rankings tabs (Directors vs Actors):
-  - Most titles
-  - Highest average IMDb
-  - Most popular (sum TMDB popularity)
-  - Side-by-side comparison (2-3 people)
-- Optional: Connection finder mini-game (actor-to-actor path)
-
----
-
-## Global Components (All Pages)
-
-### Navigation
-- Top bar: App title, current page indicator, settings icon
-- Sidebar: Page links, global filters
-
-### Global Filters (Persist via session state)
-- Platform view: Netflix+Max combined, Netflix only, Max only, All platforms
-- Content type: Movies, Shows
-- Year range slider
-- Minimum IMDb slider
+### 3.1 Global filters (persist via session state)
+Filters shown in the sidebar on every page:
+- Platform view: merged, netflix, max, all_platforms
+- Type: Movies, Shows (multi-select ok)
+- Release year range
+- Minimum IMDb
 - Genre multi-select
-- Reset filters button
+- Reset button
 
-### Quick Stats Panel
-- Titles matching current filter state
-- Average IMDb for current filter state
-- Updates when filters change
+### 3.2 Quick stats panel
+On every page (top or sidebar), show:
+- Count of titles matching filters
+- Average IMDb for filtered set (ignore nulls)
 
----
+### 3.3 Performance targets
+- Initial page load target: under ~2 seconds after first cache warmup
+- Any heavy computation must be precomputed offline and loaded fast in-app
+- Use pagination for tables and long lists
 
-## Technical Requirements
+### 3.4 Transparency footer
+On every page include:
+- “Hypothetical merger for academic analysis.”
+- “Data is a snapshot (mid-2023).”
+- Short “How it works” expanders for similarity, embeddings, predictor outputs.
 
-### Data
-- Cleaned data stored as parquet files
-- Cached at app startup using `@st.cache_data`
+## 4) Page specifications (acceptance criteria)
 
-### Models
-- TF-IDF vectorizers cached with `@st.cache_resource`
-- Sentence embeddings precomputed offline
-- UMAP/t-SNE coordinates precomputed offline
+### Page 0: Home (Home.py)
+Purpose: executive overview dashboard.
+Must include:
+- 4 hero metrics: combined catalog size, avg IMDb, unique people count, genre count
+- Merger impact section:
+  - Volume boost chart: Netflix vs Max vs merged
+  - Quality shift: distribution comparison (Netflix vs merged)
+  - Genre expansion: top genres comparison
+- Top titles module:
+  - Tabs: By Rating, By Popularity
+  - Clickable title card opens a detail panel or links to Explore Catalog with that title selected
+- Content timeline by decade
+- “Jump to page” navigation cards
 
-### Performance
-- Precomputed artifacts for expensive operations
-- Lazy loading for details (credits load on title selection)
-- Paginated lists and tables
-- Only render filtered subsets
+Definition of done:
+- Works with global filters
+- No expensive computation at runtime
 
-### Transparency
-- Footer on every page: Data disclosure (mid-2023 snapshot), hypothetical merger disclaimer
-- "How it works" expanders for predictions/similarity
-- Link to methodology and GitHub repo
+### Page 1: Explore Catalog (pages/01_Explore_Catalog.py)
+Purpose: searchable catalog + “similar titles.”
+Must include:
+- Search + filter controls: autocomplete title search, type, year range, min IMDb, genre, sort
+- Two-panel layout:
+  - Left: paginated results list (50 per page)
+  - Right: detail view (metadata + description)
+- Similar titles block:
+  - Uses TF-IDF and/or embeddings similarity (precomputed preferred)
+  - Scope toggle: merged only vs all platforms
+  - Show top 10 with similarity score
+  - Clicking a recommendation loads that title in the detail view
 
----
+Definition of done:
+- Similar titles returns results in under 200ms after cache warmup
 
-## Success Criteria
+### Page 2: Platform Comparisons (pages/02_Platform_Comparisons.py)
+Purpose: compare merged entity vs competitors.
+Must include:
+- Competitor selector (up to 3) plus merged baseline always included
+- Absolute vs normalized mode
+- Volume chart + summary table
+- Quality chart (box/violin ok) plus a threshold table
+- Genre heatmap:
+  - Top 15 genres by overall volume
+  - Drill-down: for a clicked genre show counts, avg IMDb, and top titles per platform
 
-### Technical
-- Pages load reliably and quickly (<2s)
-- Global filters apply consistently
-- Similarity and recommendations return sensible results
-- Successfully deployed on Streamlit Cloud
+Definition of done:
+- All comparisons work off `all_platforms_titles.parquet`
+- Heatmap drill-down is fast and correct
 
-### Product & UX
-- Easy to navigate
-- Clear separation of purposes per page
-- Outputs are explainable with tooltips
+### Page 3: Platform DNA (pages/03_Platform_DNA.py)
+Purpose: platform “identity” and content landscape.
+Must include:
+- Platform profile cards: genre mix, era focus, quality tier, 3 to 5 traits
+- UMAP 2D plot:
+  - Each point is a title, colored by platform
+  - Selecting a region or clicking reveals sample titles and interpretation text
+- “What platform are you?” mini matcher:
+  - User preferences -> platform similarity scores + short explanation
 
-### Academic
-- Demonstrates real data engineering (merge, clean, validate)
-- Demonstrates ML/NLP thoughtfully (similarity, embeddings, clustering)
-- Demonstrates decision-support thinking (overlap, gap analysis, strategy)
-- Transparent about limitations and snapshot timing
+Definition of done:
+- UMAP uses precomputed coordinates only (no fitting in-app)
+
+### Page 4: Discovery Engine (pages/04_Discovery_Engine.py)
+Purpose: recommendation toolkit with 3 entry points.
+Must include 3 tabs:
+1) Similar to a title (fast, explainable)
+2) Preference-based recommender (genres, min IMDb, type, year range, scope)
+3) Vibe search (text prompt using embeddings over descriptions)
+
+Also:
+- Recommendation history (last 10 runs in session state)
+
+Definition of done:
+- Each recommender explains why items appear (briefly, via tooltip/expander)
+
+### Page 5: Strategic Insights (pages/05_Strategic_Insights.py)
+Purpose: merger overlap + gap analysis and executive narrative.
+Must include:
+- Value dashboard: overlap rate, gap coverage, quality lift, diversity proxy metric
+- Overlap analysis:
+  - Identify overlaps between Netflix and Max
+  - Break down overlap by genre, type, decade, certification
+  - Audit table with confidence score and evidence fields
+- Gap analysis tool:
+  - Perspective selector: merged vs competitor
+  - Output prioritized gaps with severity labels
+- Strategic recommendations block:
+  - 5 to 10 bullet insights that are directly supported by metrics shown
+
+Definition of done:
+- Overlap and gaps come from precomputed tables in `data/precomputed/strategic_analysis/`
+
+### Page 6: Interactive Lab (pages/06_Interactive_Lab.py)
+Purpose: high-engagement interactive features.
+Must include:
+- “Build your streaming service” draft mini-game:
+  - Budget, pick titles, live metrics dashboard
+  - Compare vs merged baseline
+- Hypothetical title predictor:
+  - User inputs -> predicted IMDb range + uncertainty band
+  - Suggest talent options based on genre track record
+- Insight generator:
+  - Generates 5 to 8 data-backed insights from a chosen scope
+
+Definition of done:
+- Predictor is loaded via `models/imdb_predictor.pkl` and is cached
+- Generator outputs must cite the metric used (not external facts)
+
+### Page 7: Cast & Crew Network (pages/07_Cast_Crew_Network.py)
+Purpose: explore collaboration network and people profiles.
+Must include:
+- Person search (autocomplete) + filters (role, min title count, scope)
+- Person profile:
+  - Key stats: avg IMDb, popularity proxy, career span, top genres
+  - Top collaborators (clickable)
+  - Filmography table (sortable + paginated)
+  - Trend line of IMDb over time (by release year)
+- Rankings tabs:
+  - Most titles, highest avg IMDb, most popular
+  - Compare 2 to 3 people side by side
+
+Definition of done:
+- Network uses `data/precomputed/network/edges.parquet` and `person_stats.parquet`
+
+## 5) Engineering requirements
+
+### 5.1 App code rules
+- Pages should be thin. Most logic lives in `src/`.
+- All file paths and constants come from `src/config.py`.
+- No repeated data loading logic in pages. Use `src/data/loaders.py`.
+
+### 5.2 Caching rules
+- `st.cache_data` for data tables and computed tables
+- `st.cache_resource` for models/vectorizers/UMAP objects
+
+### 5.3 Testing (minimal)
+- `tests/test_data_pipeline.py`: validates processed datasets exist and have expected columns
+- `tests/test_similarity.py`: sanity checks similarity outputs
+- `tests/test_analysis.py`: overlap + gap logic sanity checks
+
+## 6) Out of scope (explicit)
+- Live web scraping or real-time market share data
+- Full UI snapshot tests
+- Perfect causal claims about merger outcomes
+
+## 7) Success criteria
+- All 7 pages functional with consistent global filters
+- Recommendations and similarity feel sensible and are explainable
+- App runs locally and is deployable on Streamlit Cloud
