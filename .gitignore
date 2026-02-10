@@ -41,7 +41,7 @@ data/interim/*.parquet
 data/processed/*.parquet
 
 # Optional: Uncomment if raw CSVs are very large (>100MB each)
-# data/raw/*.csv
+data/raw/*.csv
 
 # Models
 # Ignore large model files (>100MB)
