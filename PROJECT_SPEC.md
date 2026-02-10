@@ -1,7 +1,7 @@
 # PROJECT_SPEC.md: Netflix + Max Merger Streamlit App
 
 ## 1) Goal
-Build a 7-page Streamlit app that analyzes a hypothetical Netflix + Warner Bros (Max) merger.
+Build an 8-page Streamlit app (Home + 7 content pages) that analyzes a hypothetical Netflix + Warner Bros (Max) merger.
 Primary outputs: searchable catalog, recommendation tools, competitive comparisons, merger overlap + gap insights, and cast/crew network exploration.
 
 ## 2) Datasets and artifact contracts

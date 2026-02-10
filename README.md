@@ -1,6 +1,6 @@
 # Netflix + Max Merger Analysis
 
-A 7-page Streamlit application analyzing a hypothetical Netflix + Warner Bros (Max) merger using data from 6 streaming platforms.
+An 8-page Streamlit application (Home + 7 content pages) analyzing a hypothetical Netflix + Warner Bros (Max) merger using data from 6 streaming platforms.
 
 ## Project Structure
 
@@ -28,9 +28,10 @@ streaming-merger/
 
 ### Installation
 
-1. **Clone or navigate to project directory:**
+1. **Clone the repository:**
 ```bash
-cd "/Users/rohan1809/Desktop/Streaming Merger"
+git clone https://github.com/therealrohan303/Streaming-Merge-Pro.git
+cd Streaming-Merge-Pro
 ```
 
 2. **Create virtual environment:**
@@ -98,10 +99,10 @@ Deploy to Streamlit Cloud:
 ## Development Workflow
 
 ### Week 1: Foundation
-- ✅ Create folder structure
-- ✅ Implement data pipeline (`01_clean_raw_data.py`, `02_merge_platforms.py`)
-- ✅ Build core utilities (`src/config.py`, `src/data/loaders.py`, `src/ui/filters.py`)
-- ✅ Create basic `Home.py`
+- [ ] Create folder structure
+- [ ] Implement data pipeline (`01_clean_raw_data.py`, `02_merge_platforms.py`)
+- [ ] Build core utilities (`src/config.py`, `src/data/loaders.py`, `src/ui/filters.py`)
+- [ ] Create basic `Home.py`
 
 ### Weeks 2-10: Page Development
 Each week focuses on 1-2 pages:
