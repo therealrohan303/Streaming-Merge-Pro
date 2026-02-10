@@ -1,0 +1,45 @@
+# Streamlit Configuration for Netflix + Max Merger Analysis
+
+[theme]
+# Primary color (Netflix + Max merged purple)
+primaryColor = "#7B1FA2"
+
+# Background color (dark theme)
+backgroundColor = "#0E1117"
+
+# Secondary background color (for sidebar and widgets)
+secondaryBackgroundColor = "#262730"
+
+# Text color
+textColor = "#FAFAFA"
+
+# Font family
+font = "sans serif"
+
+[server]
+# Maximum upload size in MB
+maxUploadSize = 200
+
+# Enable CORS
+enableCORS = false
+
+# Enable XSRF protection
+enableXsrfProtection = true
+
+[runner]
+# Enable fast reruns (useful for development)
+fastReruns = true
+
+# Magic commands enabled
+magicEnabled = true
+
+[client]
+# Show error details
+showErrorDetails = false
+
+# Toolbar mode
+toolbarMode = "minimal"
+
+[logger]
+# Logging level
+level = "warning"
