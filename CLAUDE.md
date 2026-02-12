@@ -1,7 +1,7 @@
 # CLAUDE.md: Streaming Merger Capstone (Netflix + Max)
 
 ## What this repo is
-A 7-page Streamlit app that analyzes a hypothetical Netflix + Warner Bros (Max) merger using catalogs + credits from 6 platforms.
+An 8-page Streamlit app (Home + 7 content pages) that analyzes a hypothetical Netflix + Warner Bros (Max) merger using catalogs + credits from 6 platforms.
 
 ## Source of truth docs (read as needed)
 - PROJECT_SPEC.md: page-by-page requirements and acceptance criteria

@@ -82,7 +82,6 @@ logs/
 .env.local
 
 # OS
-.DS_Store
 Thumbs.db
 
 # Temporary files

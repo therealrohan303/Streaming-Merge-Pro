@@ -10,6 +10,16 @@
 - ✅ Created .streamlit/config.toml with theme
 - ✅ Created .gitignore
 - ✅ Made initial git commit
+- ✅ Repo hygiene pass:
+  - Fixed .gitignore duplicate .DS_Store entry
+  - Fixed CLAUDE.md page count (7-page → 8-page)
+  - Removed stale requirements.txt note from README.md
+  - Pinned dependencies with ~= (compatible release) in requirements.txt
+  - Added .python-version (3.9)
+  - Added .editorconfig for consistent formatting
+  - Added .pre-commit-config.yaml (black, isort, trailing-whitespace, end-of-file-fixer)
+  - Added tests/conftest.py with shared fixtures (sample_titles_df, sample_credits_df, tmp_data_dir)
+  - Added .github/workflows/ci.yml (pytest on Python 3.9 + 3.11)
 
 ### Next
 - [ ] Implement `scripts/01_clean_raw_data.py`

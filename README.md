@@ -47,14 +47,6 @@ venv\Scripts\activate  # On Windows
 pip install -r requirements.txt
 ```
 
-**Note:** `requirements.txt` will be created in Week 1 with core dependencies:
-- streamlit
-- pandas
-- numpy
-- scikit-learn
-- plotly
-- pyarrow (for parquet files)
-
 ## Data Pipeline
 
 ### Step 1: Clean Raw Data
