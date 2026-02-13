@@ -106,6 +106,13 @@ INITIAL_SIDEBAR_STATE = "expanded"
 PLOTLY_TEMPLATE = "plotly_dark"
 CHART_HEIGHT = 400
 
+# Card styling (dark theme)
+CARD_BG = "#1E1E2E"
+CARD_BORDER = "#333"
+CARD_TEXT = "#ddd"
+CARD_TEXT_MUTED = "#888"
+CARD_ACCENT = "#FFD700"
+
 # =============================================================================
 # DATA QUALITY THRESHOLDS
 # =============================================================================

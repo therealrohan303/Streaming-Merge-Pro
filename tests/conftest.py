@@ -16,11 +16,17 @@ def sample_titles_df():
                 "Drama Series",
                 "Sci-Fi Film",
             ],
-            "type": ["MOVIE", "SHOW", "SHOW", "MOVIE"],
+            "type": ["Movie", "Show", "Show", "Movie"],
             "release_year": [2020, 2019, 2021, 2022],
-            "genres": ["action,thriller", "comedy", "drama", "scifi,action"],
+            "genres": [
+                ["action", "thriller"],
+                ["comedy"],
+                ["drama"],
+                ["scifi", "action"],
+            ],
             "imdb_score": [7.5, 6.8, 8.2, 7.0],
             "imdb_votes": [15000, 8000, 22000, 12000],
+            "tmdb_popularity": [50.0, 30.0, 80.0, 45.0],
             "description": [
                 "An action-packed adventure.",
                 "A hilarious comedy series.",
@@ -28,6 +34,8 @@ def sample_titles_df():
                 "A journey through space and time.",
             ],
             "platform": ["netflix", "netflix", "max", "max"],
+            "decade": ["2020s", "2010s", "2020s", "2020s"],
+            "quality_tier": ["Good", "Average", "Excellent", "Good"],
         }
     )
 
@@ -38,7 +46,7 @@ def sample_credits_df():
     return pd.DataFrame(
         {
             "person_id": [1, 2, 3, 1, 4],
-            "id": ["tt001", "tt001", "tt002", "tt003", "tt003"],
+            "title_id": ["tt001", "tt001", "tt002", "tt003", "tt003"],
             "name": [
                 "Alice Smith",
                 "Bob Jones",
@@ -47,7 +55,7 @@ def sample_credits_df():
                 "Dan Brown",
             ],
             "role": ["ACTOR", "DIRECTOR", "ACTOR", "ACTOR", "DIRECTOR"],
-            "character": ["Hero", None, "Lead", "Villain", None],
+            "character": ["Hero", "", "Lead", "Villain", ""],
             "platform": ["netflix", "netflix", "netflix", "max", "max"],
         }
     )

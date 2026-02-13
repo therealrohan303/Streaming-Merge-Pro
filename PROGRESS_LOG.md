@@ -21,39 +21,83 @@
   - Added tests/conftest.py with shared fixtures (sample_titles_df, sample_credits_df, tmp_data_dir)
   - Added .github/workflows/ci.yml (pytest on Python 3.9 + 3.11)
 
+- ✅ Implemented `scripts/01_clean_raw_data.py` — 12 raw CSVs → 12 interim parquets
+  - Adds `platform` column, parses genres/countries to lists, standardizes type (Movie/Show)
+  - Renames credits `id` → `title_id`, coerces numerics, computes decade + quality_tier
+- ✅ Implemented `scripts/02_merge_platforms.py` — 4 processed parquets
+  - merged_titles (9,167 rows), merged_credits (146,234 rows)
+  - all_platforms_titles (25,246 rows), all_platforms_credits (370,546 rows)
+- ✅ Created `scripts/run_pipeline.sh` (runs 01 → 02)
+- ✅ Implemented `src/data/loaders.py` with @st.cache_data loaders + view routing
+- ✅ Implemented `src/ui/session.py` (session state defaults + reset)
+- ✅ Implemented `src/ui/filters.py` (sidebar filters + apply_filters + quick stats)
+- ✅ Created `Home.py` — hero metrics, merger impact charts, top titles, timeline, nav cards
+- ✅ Created 7 page stubs in `pages/`
+- ✅ Updated `tests/conftest.py` fixtures to match pipeline output format
+
 ### Next
-- [ ] Implement `scripts/01_clean_raw_data.py`
-  - Read 12 raw CSVs
-  - Standardize schema across platforms
-  - Handle missing values (IMDb, release years, descriptions)
-  - Output to data/interim/ (12 parquet files)
-- [ ] Implement `scripts/02_merge_platforms.py`
-  - Merge Netflix + Max → data/processed/merged_titles.parquet (~9K rows)
-  - Merge all 6 platforms → data/processed/all_platforms_titles.parquet (~25K rows)
-  - Do same for credits
-- [ ] Implement `src/data/loaders.py`
-  - `load_merged_titles()` with @st.cache_data
-  - `load_all_platforms_titles()` with @st.cache_data
-  - `load_merged_credits()` with @st.cache_data
-- [ ] Implement `src/ui/filters.py` (global filter sidebar)
-- [ ] Implement `src/ui/session.py` (session state management)
-- [ ] Create basic `Home.py` that loads merged data and renders filters
+- [ ] Add `tests/test_data_pipeline.py` to validate processed datasets
+- [ ] Implement Page 1: Explore Catalog
+- [ ] Implement Page 2: Platform Comparisons
 
 ### Blockers
 - None
 
 ---
 
-## [Date] Week 2: Home Dashboard
+## [2026-02-12] Week 2: Home Dashboard Polish
 
 ### Done
--
+- ✅ **Phase 1 — Bayesian Quality Scoring & Top Titles Redesign**
+  - Created `src/analysis/scoring.py`: bayesian_imdb(), normalize_popularity(), compute_quality_score(), format_votes()
+  - Replaced naive IMDb sort with 70% Bayesian IMDb + 30% normalized TMDB popularity composite
+  - Redesigned Top Titles as 4-column card grid with Movies/Shows tabs
+  - Added "How Rankings Work" methodology expander
+- ✅ **Phase 2 — Capitalization & Professional Formatting**
+  - Added `_platform_name()` helper for consistent display names
+  - Title-cased genre labels, descriptive chart subheaders, proper legend names
+- ✅ **Phase 3 — Enhanced Overview Metrics**
+  - Computed Netflix-only baselines for delta comparison
+  - All 4 hero metrics show % or absolute deltas vs Netflix alone with help tooltips
+- ✅ **Phase 4 — Quick Stats Panel**
+  - Sidebar container placeholder pattern: stats render above filters
+  - "Titles Shown" and "Avg IMDb Score" with deltas from unfiltered totals
+- ✅ **Phase 5 — Enhanced Filter Controls** (`src/ui/filters.py`)
+  - Genre multiselect: title-cased labels with counts, sorted by frequency
+  - IMDb quick preset buttons (6+, 7+, 8+)
+  - Help text on all 5 filter widgets
+- ✅ **Phase 6 — Section Descriptions & Context**
+  - Dynamic insight callout after Overview (computed merger gains)
+  - "About These Comparisons" methodology expander after Merger Impact
+  - Captions on all section headers
+- ✅ **Phase 7 — Global Reach Geographic Section**
+  - Top 10 production countries horizontal bar chart + 2 metrics (Countries Represented, International Content %)
+  - ISO country code → display name mapping (30 entries, no external dependency)
+  - Responds to sidebar filters like all other sections
+- ✅ **Phase 8 — Final Polish Pass**
+  - Fixed redundant `load_merged_credits()` call → reuses `merged_credits_all`
+  - Consistent comma formatting on all metrics
+  - Removed emojis from headers and card HTML for professional tone
+  - Insight-driven section captions
+  - `st.markdown("---")` separators between all major sections
+  - Card hover effect (CSS transition + inline JS lift-and-shadow)
+  - Extracted 5 card color constants to `src/config.py` (CARD_BG, CARD_BORDER, CARD_TEXT, CARD_TEXT_MUTED, CARD_ACCENT)
+
+### Files touched
+- `Home.py` — full dashboard (7 content sections + nav + footer)
+- `src/analysis/scoring.py` — new: quality scoring module
+- `src/ui/filters.py` — enhanced sidebar filters + quick stats
+- `src/ui/session.py` — session state (unchanged, created in Week 1)
+- `src/data/loaders.py` — added `_fix_list_cols` for parquet numpy→list conversion
+- `src/config.py` — added card theme constants
 
 ### Next
--
+- [ ] Add `tests/test_data_pipeline.py` to validate processed datasets
+- [ ] Implement Page 1: Explore Catalog
+- [ ] Implement Page 2: Platform Comparisons
 
 ### Blockers
--
+- None
 
 ---
 
