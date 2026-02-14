@@ -101,16 +101,80 @@
 
 ---
 
-## [Date] Week 3: Explore Catalog
+## [2026-02-13] Week 3: Explore Catalog
 
 ### Done
--
+- ✅ **Precomputation — Multi-Signal Similarity**
+  - Created `scripts/03_compute_similarity.py`: multi-signal similarity on 23,357 deduplicated titles
+  - **4 signals**: description TF-IDF cosine (30%), genre cosine (30%), type match (15%), IMDb proximity (25%)
+  - Description TF-IDF: 5000 features, (1,2) ngrams, English stop words
+  - Genre cosine similarity on binary genre vectors (19 unique genres) — better than Jaccard for partial overlaps
+  - Batched computation (2K rows/batch) to limit memory
+  - Output: `data/precomputed/similarity/tfidf_top_k.parquet` (1,167,850 rows — top 50 per title)
+  - Saved `models/tfidf_vectorizer.pkl` for reuse on Page 4 (Discovery Engine)
+  - Config: `SIMILARITY_STORE_TOP_K = 50`, `SIMILARITY_MIN_SCORE = 0.4`, `SIMILARITY_MIN_IMDB = 6.0`
+  - Validated: Breaking Bad → Ozark (#2), The Wire (#3); GoT → House of the Dragon (#1); The Batman → Dark Knight trilogy + Joker
+- ✅ **Similarity Lookup Module** (`src/analysis/similarity.py`)
+  - `get_similar_titles()`: filters by scope, min score, min IMDb (6.0+), top-K
+  - Returns enriched DataFrame with title metadata + similarity_score
+- ✅ **Cached Loaders** (`src/data/loaders.py`)
+  - `load_similarity_data()` with `@st.cache_data`
+  - `load_tfidf_vectorizer()` with `@st.cache_resource`
+- ✅ **Page 1: Explore Catalog** (`pages/01_Explore_Catalog.py`)
+  - Global sidebar filters (reuses filters.py pattern from Home)
+  - Two-panel layout: left = paginated results, right = detail view + similar titles
+  - Detail view: 4 metrics row, genre pills, rating/runtime/votes, quality score, description
+  - Similar titles: scope toggle (merged vs all platforms), top 10 with similarity %, clickable View buttons
+  - "How Similar Titles Work" methodology expander
+  - Transparency footer
+- ✅ **Explore Catalog — Enhanced Pagination**
+  - Items per page selector (25, 50, 100)
+  - Full navigation: ⏮ First / ◄ Prev / Page X of Y / Next ► / Last ⏭
+  - Jump-to-page number input with Go button
+  - Range display: "Showing 1–50 of 9,067"
+- ✅ **Explore Catalog — Active Filter Indicator**
+  - Filter summary bar at top of page with styled pill badges
+  - Shows non-default filters: platform, content type, year range, IMDb threshold, genres
+- ✅ **Explore Catalog — Search Enhancements**
+  - Multi-field search: title + description + cast names (via credits join)
+  - Quick suggestions: top 5 title matches shown as buttons before full search
+  - Placeholder text: "Search by title, cast, or keyword..."
+  - Empty state: friendly message with hints (search vs filter-no-results)
+- ✅ **Explore Catalog — Sort & Display**
+  - 7 sort options: Quality Score, IMDb Score, Release Year (Newest/Oldest), Most Voted, Title A-Z, Popularity
+  - Result cards: hover effects, selected state (gold border + glow)
+  - Detail panel in bordered container for visual separation
+  - TMDB popularity formatted as K/M, consistent score formatting
+- ✅ **Explore Catalog — Cast & Crew Expander**
+  - Collapsible section in detail panel showing directors and up to 15 actors with character names
+  - Singular/plural director label, "+X more" overflow indicator
+- ✅ **Home → Explore Navigation**
+  - "View Details" button on each top title card navigates to Explore Catalog detail panel
+  - Uses `st.switch_page()` with pre-set `explore_selected_id` session state
+- ✅ **Bug Fixes**
+  - Fixed duplicate Streamlit element key errors in Home.py (`_render_title_cards` tab prefix + card index)
+  - Fixed duplicate key errors in Explore page result list and similar titles (row index keying)
+  - Removed "Current Selection" quick stats panel from sidebar on both pages
+- ✅ **Tests** (`tests/test_similarity.py`)
+  - 7 test cases: top-K limit, min score filter, scope filtering, missing ID, sort order, self-exclusion, min IMDb filter
+- ✅ Updated `scripts/run_pipeline.sh` to include script 03
+
+### Files touched
+- `src/config.py` — added SIMILARITY_STORE_TOP_K=50, SIMILARITY_MIN_SCORE=0.4, SIMILARITY_MIN_IMDB=6.0, CATALOG_PAGE_SIZE
+- `scripts/03_compute_similarity.py` — rewritten: multi-signal similarity (desc TF-IDF + genre cosine + type match + IMDb proximity)
+- `src/analysis/similarity.py` — updated: added min_imdb filtering
+- `src/data/loaders.py` — added load_similarity_data(), load_tfidf_vectorizer()
+- `pages/01_Explore_Catalog.py` — full page with enhanced pagination, search, sort, cast & crew, visual polish
+- `Home.py` — added View Details buttons linking to Explore page, fixed duplicate keys
+- `tests/test_similarity.py` — new: similarity tests
+- `scripts/run_pipeline.sh` — added script 03
 
 ### Next
--
+- [ ] Implement Page 2: Platform Comparisons
+- [ ] Add `tests/test_data_pipeline.py` to validate processed datasets
 
 ### Blockers
--
+- None
 
 ---
 

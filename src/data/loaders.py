@@ -3,7 +3,7 @@
 import pandas as pd
 import streamlit as st
 
-from src.config import PROCESSED_DIR
+from src.config import MODELS_DIR, PRECOMPUTED_DIR, PROCESSED_DIR
 
 
 def _fix_list_cols(df: pd.DataFrame) -> pd.DataFrame:
@@ -32,6 +32,20 @@ def load_all_platforms_titles() -> pd.DataFrame:
 @st.cache_data
 def load_all_platforms_credits() -> pd.DataFrame:
     return pd.read_parquet(PROCESSED_DIR / "all_platforms_credits.parquet")
+
+
+@st.cache_data
+def load_similarity_data() -> pd.DataFrame:
+    """Load precomputed TF-IDF similarity top-K table."""
+    return pd.read_parquet(PRECOMPUTED_DIR / "similarity" / "tfidf_top_k.parquet")
+
+
+@st.cache_resource
+def load_tfidf_vectorizer():
+    """Load fitted TF-IDF vectorizer (for future use in Discovery Engine)."""
+    import joblib
+
+    return joblib.load(MODELS_DIR / "tfidf_vectorizer.pkl")
 
 
 def get_titles_for_view(platform_view: str) -> pd.DataFrame:

@@ -86,7 +86,9 @@ UMAP_RANDOM_STATE = 42
 
 # Similarity Search
 SIMILARITY_TOP_K = 10  # Number of similar titles to recommend
-SIMILARITY_MIN_SCORE = 0.1  # Minimum similarity score threshold
+SIMILARITY_MIN_SCORE = 0.4  # Minimum similarity score threshold (40%)
+SIMILARITY_MIN_IMDB = 6.0  # Only recommend titles with IMDb >= 6.0
+SIMILARITY_STORE_TOP_K = 50  # Store 50 neighbors offline; pages filter to TOP_K
 
 # Embeddings
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # Sentence-BERT model
@@ -105,6 +107,9 @@ INITIAL_SIDEBAR_STATE = "expanded"
 # Chart theme
 PLOTLY_TEMPLATE = "plotly_dark"
 CHART_HEIGHT = 400
+
+# Pagination
+CATALOG_PAGE_SIZE = 50  # Results per page on Explore Catalog
 
 # Card styling (dark theme)
 CARD_BG = "#1E1E2E"

@@ -25,7 +25,7 @@ from src.data.loaders import (
     load_merged_credits,
     load_merged_titles,
 )
-from src.ui.filters import apply_filters, render_quick_stats, render_sidebar_filters
+from src.ui.filters import apply_filters, render_sidebar_filters
 from src.ui.session import init_session_state
 
 
@@ -58,9 +58,6 @@ init_session_state()
 
 # ── data loading ─────────────────────────────────────────────────────────────
 
-# Reserve a placeholder at the top of the sidebar for quick stats
-_stats_placeholder = st.sidebar.container()
-
 # Load data for current platform view
 raw_df = get_titles_for_view(st.session_state["platform_view"])
 filters = render_sidebar_filters(raw_df)
@@ -70,10 +67,6 @@ raw_df = get_titles_for_view(filters["platform_view"])
 df = apply_filters(raw_df, filters)
 
 credits_df = get_credits_for_view(filters["platform_view"])
-
-# Fill the placeholder with quick stats (appears above filters)
-with _stats_placeholder:
-    render_quick_stats(df, total_count=len(raw_df), total_avg_imdb=raw_df["imdb_score"].mean())
 
 # ── title ────────────────────────────────────────────────────────────────────
 
@@ -277,13 +270,14 @@ df["quality_score"] = compute_quality_score(df)
 tab_movies, tab_shows = st.tabs(["Top Movies", "Top Shows"])
 
 
-def _render_title_cards(subset):
+def _render_title_cards(subset, tab_prefix: str):
     """Render a 4-column grid of title cards for the top 20 titles."""
     top = subset.nlargest(20, "quality_score")
     if len(top) == 0:
         st.info("No titles match the current filters.")
         return
     rows = [top.iloc[i : i + 4] for i in range(0, len(top), 4)]
+    card_idx = 0
     for row_chunk in rows:
         cols = st.columns(4)
         for col, (_, title) in zip(cols, row_chunk.iterrows()):
@@ -299,7 +293,7 @@ def _render_title_cards(subset):
             with col:
                 st.markdown(
                     f"""<div style="background:{CARD_BG};border-radius:10px;padding:14px 12px;
-                    margin-bottom:8px;border:1px solid {CARD_BORDER};
+                    margin-bottom:4px;border:1px solid {CARD_BORDER};
                     transition:transform 0.15s ease,box-shadow 0.15s ease;"
                     onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(0,0,0,0.3)'"
                     onmouseout="this.style.transform='none';this.style.boxShadow='none'">
@@ -316,13 +310,17 @@ def _render_title_cards(subset):
                     </div>""",
                     unsafe_allow_html=True,
                 )
+                if st.button("View Details", key=f"home_view_{tab_prefix}_{card_idx}", use_container_width=True):
+                    st.session_state["explore_selected_id"] = title["id"]
+                    st.switch_page("pages/01_Explore_Catalog.py")
+                card_idx += 1
 
 
 with tab_movies:
-    _render_title_cards(df[df["type"] == "Movie"])
+    _render_title_cards(df[df["type"] == "Movie"], tab_prefix="movie")
 
 with tab_shows:
-    _render_title_cards(df[df["type"] == "Show"])
+    _render_title_cards(df[df["type"] == "Show"], tab_prefix="show")
 
 with st.expander("How Rankings Work"):
     st.markdown(
