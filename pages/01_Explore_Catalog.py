@@ -19,6 +19,7 @@ from src.config import (
     SIMILARITY_TOP_K,
 )
 from src.data.loaders import (
+    deduplicate_titles,
     get_credits_for_view,
     get_titles_for_view,
     load_all_platforms_titles,
@@ -38,8 +39,15 @@ def _platform_badge(key: str) -> str:
     return (
         f'<span style="background:{bg};color:{fg};padding:2px 8px;'
         f'border-radius:4px;font-size:0.75em;font-weight:600;'
-        f'letter-spacing:0.02em;">{name}</span>'
+        f'letter-spacing:0.02em;margin-right:3px;">{name}</span>'
     )
+
+
+def _platform_badges(platforms) -> str:
+    """Return combined HTML badges for a list of platform keys."""
+    if isinstance(platforms, list):
+        return "".join(_platform_badge(p) for p in platforms)
+    return _platform_badge(platforms)
 
 
 _PLATFORM_LABELS = {
@@ -150,10 +158,11 @@ with ctrl_right:
     )
     st.session_state["explore_sort"] = sort_by
 
-# ── compute quality scores ──────────────────────────────────────────────────
+# ── compute quality scores & deduplicate ────────────────────────────────────
 
 df = df.copy()
 df["quality_score"] = compute_quality_score(df)
+df = deduplicate_titles(df)
 
 # ── quick suggestions (title matches before full search is applied) ─────────
 
@@ -365,7 +374,7 @@ with left_col:
                 if row["release_year"] == row["release_year"]
                 else "?"
             )
-            plat_badge = _platform_badge(row["platform"])
+            plat_badge = _platform_badges(row.get("platforms", row.get("platform", "")))
 
             # Selected state: gold border + subtle glow; default: hover effects
             if is_selected:
@@ -418,7 +427,7 @@ with right_col:
         if sel_rows.empty:
             sel_rows = raw_df[raw_df["id"] == selected_id]
             if not sel_rows.empty:
-                sel_rows = sel_rows.copy()
+                sel_rows = deduplicate_titles(sel_rows.copy())
                 sel_rows["quality_score"] = compute_quality_score(sel_rows)
         if sel_rows.empty:
             st.warning(
@@ -450,9 +459,11 @@ with right_col:
                     )
                     st.metric("IMDb", imdb_val)
                 with m4:
+                    plat_list = sel.get("platforms", sel.get("platform", ""))
+                    plat_label = "Platforms" if isinstance(plat_list, list) and len(plat_list) > 1 else "Platform"
                     st.markdown(
-                        f"<div style='font-size:0.82em;color:{CARD_TEXT_MUTED};margin-bottom:4px;'>Platform</div>"
-                        f"<div>{_platform_badge(sel['platform'])}</div>",
+                        f"<div style='font-size:0.82em;color:{CARD_TEXT_MUTED};margin-bottom:4px;'>{plat_label}</div>"
+                        f"<div>{_platform_badges(plat_list)}</div>",
                         unsafe_allow_html=True,
                     )
 
@@ -605,7 +616,7 @@ with right_col:
                     sim_imdb_str = (
                         f"{sim_imdb:.1f}" if sim_imdb == sim_imdb else "N/A"
                     )
-                    sim_plat_badge = _platform_badge(sim_row["platform"])
+                    sim_plat_badge = _platform_badges(sim_row.get("platforms", sim_row.get("platform", "")))
 
                     year_str = (
                         str(int(sim_row["release_year"]))

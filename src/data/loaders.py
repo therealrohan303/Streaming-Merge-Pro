@@ -3,7 +3,7 @@
 import pandas as pd
 import streamlit as st
 
-from src.config import MODELS_DIR, PRECOMPUTED_DIR, PROCESSED_DIR
+from src.config import ALL_PLATFORMS, MODELS_DIR, PRECOMPUTED_DIR, PROCESSED_DIR
 
 
 def _fix_list_cols(df: pd.DataFrame) -> pd.DataFrame:
@@ -12,6 +12,32 @@ def _fix_list_cols(df: pd.DataFrame) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].apply(lambda x: list(x) if hasattr(x, "tolist") else x)
     return df
+
+
+_PLATFORM_ORDER = {p: i for i, p in enumerate(ALL_PLATFORMS)}
+
+
+def deduplicate_titles(df: pd.DataFrame) -> pd.DataFrame:
+    """Deduplicate titles by id, aggregating platforms into a sorted list.
+
+    Replaces the ``platform`` column with a ``platforms`` column (list of keys).
+    Platform order follows ALL_PLATFORMS (netflix, max, disney, prime, ...).
+    """
+    if "platform" not in df.columns or df.empty:
+        return df
+
+    platforms_agg = (
+        df.groupby("id")["platform"]
+        .apply(lambda x: sorted(set(x), key=lambda p: _PLATFORM_ORDER.get(p, 99)))
+        .reset_index()
+        .rename(columns={"platform": "platforms"})
+    )
+
+    deduped = df.drop_duplicates(subset="id", keep="first").copy()
+    deduped = deduped.drop(columns=["platform"])
+    deduped = deduped.merge(platforms_agg, on="id", how="left")
+
+    return deduped
 
 
 @st.cache_data
@@ -40,12 +66,30 @@ def load_similarity_data() -> pd.DataFrame:
     return pd.read_parquet(PRECOMPUTED_DIR / "similarity" / "tfidf_top_k.parquet")
 
 
+@st.cache_data
+def load_umap_coords() -> pd.DataFrame:
+    """Load precomputed UMAP 2D coordinates."""
+    return pd.read_parquet(PRECOMPUTED_DIR / "dimensionality_reduction" / "umap_coords.parquet")
+
+
 @st.cache_resource
 def load_tfidf_vectorizer():
     """Load fitted TF-IDF vectorizer (for future use in Discovery Engine)."""
     import joblib
 
     return joblib.load(MODELS_DIR / "tfidf_vectorizer.pkl")
+
+
+@st.cache_data
+def load_platform_profiles() -> dict:
+    """Precompute platform profile vectors for the matcher (cached)."""
+    from src.analysis.platform_dna import compute_platform_profile_vector
+
+    df = load_all_platforms_titles()
+    profiles = {}
+    for key in ALL_PLATFORMS:
+        profiles[key] = compute_platform_profile_vector(df, key)
+    return profiles
 
 
 def get_titles_for_view(platform_view: str) -> pd.DataFrame:

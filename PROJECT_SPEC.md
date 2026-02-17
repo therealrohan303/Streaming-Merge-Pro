@@ -123,15 +123,31 @@ Definition of done:
 - All comparisons work off `all_platforms_titles.parquet`
 - Heatmap drill-down is fast and correct
 
-### Page 3: Platform DNA (pages/03_Platform_DNA.py)
-Purpose: platform “identity” and content landscape.
-Must include:
-- Platform profile cards: genre mix, era focus, quality tier, 3 to 5 traits
-- UMAP 2D plot:
-  - Each point is a title, colored by platform
-  - Selecting a region or clicking reveals sample titles and interpretation text
-- “What platform are you?” mini matcher:
-  - User preferences -> platform similarity scores + short explanation
+### PAGE 3: Platform DNA (pages/3_Platform_DNA.py)
+
+### Purpose
+Explain platform identity in a more interpretive way. This answers “what makes each platform feel different” using patterns, clustering, and profile summaries.
+
+### Layout
+
+#### Section 1: Platform Personality Profile Cards
+- Select a platform from dropdown
+- DNA card includes:
+  - Genre mix donut chart
+  - Era focus by decade
+  - Quality tier indicator (avg IMDb)
+  - 3 to 5 defining traits generated from comparisons (simple and readable)
+
+Optional:
+- Side-by-side comparison of 2 platforms using the same DNA card format
+
+#### Section 2: Content Landscape Visualization
+- UMAP or t-SNE plot precomputed offline
+- Each point is a title, colored by platform
+- Clicking an area shows a small sample list of titles from that cluster
+- Provide short interpretation text:
+  - where Netflix and Max overlap
+  - where they diverge (clusters dominated by one platform)
 
 Definition of done:
 - UMAP uses precomputed coordinates only (no fitting in-app)

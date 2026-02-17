@@ -8,8 +8,8 @@ _PRIOR_VOTES = 10_000  # Weight of the prior (confidence threshold)
 _PRIOR_MEAN = 6.5      # Global mean IMDb score (prior)
 
 # Composite weights
-_IMDB_WEIGHT = 0.70
-_POPULARITY_WEIGHT = 0.30
+_IMDB_WEIGHT = 0.85
+_POPULARITY_WEIGHT = 0.15
 
 
 def bayesian_imdb(imdb_score: pd.Series, imdb_votes: pd.Series) -> pd.Series:
@@ -32,7 +32,7 @@ def normalize_popularity(tmdb_popularity: pd.Series) -> pd.Series:
 
 
 def compute_quality_score(df: pd.DataFrame) -> pd.Series:
-    """Compute composite quality score: 70% Bayesian IMDb + 30% normalized popularity.
+    """Compute composite quality score: 85% Bayesian IMDb + 15% normalized popularity.
 
     Returns a Series aligned with df's index, values in roughly 0-10 range.
     """

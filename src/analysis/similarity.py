@@ -3,6 +3,7 @@
 import pandas as pd
 
 from src.config import SIMILARITY_MIN_IMDB, SIMILARITY_MIN_SCORE, SIMILARITY_TOP_K
+from src.data.loaders import deduplicate_titles
 
 
 def get_similar_titles(
@@ -26,7 +27,8 @@ def get_similar_titles(
         min_imdb: Minimum IMDb score for recommended titles.
 
     Returns:
-        DataFrame with title metadata plus ``similarity_score``,
+        DataFrame with title metadata plus ``similarity_score`` and
+        ``platforms`` (list of platform keys),
         sorted by similarity_score descending and limited to *top_k* rows.
         Returns an empty DataFrame when no matches are found.
     """
@@ -42,8 +44,8 @@ def get_similar_titles(
     available_ids = set(titles_df["id"].unique())
     matches = matches[matches["similar_id"].isin(available_ids)]
 
-    # Deduplicate titles (a title may appear on multiple platforms)
-    titles_deduped = titles_df.drop_duplicates(subset="id", keep="first")
+    # Deduplicate titles, aggregating platforms into a list
+    titles_deduped = deduplicate_titles(titles_df)
 
     # Join with title metadata
     result = matches.merge(
@@ -73,7 +75,7 @@ def get_similar_titles(
         "imdb_votes",
         "tmdb_popularity",
         "description",
-        "platform",
+        "platforms",
     ]
     keep_cols = [c for c in keep_cols if c in result.columns]
     return result[keep_cols].reset_index(drop=True)

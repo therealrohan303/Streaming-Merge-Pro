@@ -51,7 +51,10 @@ class TestGetSimilarTitles:
             min_imdb=0.0,
         )
         if not result.empty:
-            assert all(result["platform"] == "netflix")
+            assert all(
+                all(p == "netflix" for p in platforms)
+                for platforms in result["platforms"]
+            )
 
     def test_missing_id_returns_empty(self, sample_titles_df, sample_similarity_df):
         result = get_similar_titles(

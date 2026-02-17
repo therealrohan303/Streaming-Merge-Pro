@@ -178,29 +178,385 @@
 
 ---
 
-## [Date] Week 4: Platform Comparisons
+## [2026-02-13] Week 4: Platform Comparisons
 
 ### Done
--
+- ✅ **Analysis Module** (`src/analysis/comparisons.py`)
+  - `build_merged_entity()`: combines Netflix + Max into single "merged" platform, deduplicates by id (9,158 titles)
+  - `build_comparison_df()`: merged entity + selected competitors with display names and ordering
+  - `compute_volume_stats()`: title counts per platform/type, absolute or normalized (%)
+  - `compute_volume_summary()`: one-row-per-platform summary (total, movies, shows, avg/median IMDb)
+  - `compute_quality_tiers()`: titles binned into Excellent/Good/Average/Below Average/Poor/Unrated, pivoted by platform
+  - `compute_genre_heatmap()`: top 15 genres × platforms matrix, absolute counts or % of catalog
+  - `compute_genre_drilldown()`: per-platform stats + top 5 titles for a selected genre
+  - Genre display name fixes: "documentation" → "Documentary", "scifi" → "Sci-Fi"
+- ✅ **Page 2: Platform Comparisons** (`pages/02_Platform_Comparisons.py`)
+  - Competitor selector: multiselect up to 3 competitors, merged baseline always included
+  - Absolute/normalized toggle affecting all sections
+  - **Catalog Volume**: grouped bar chart (Movie/Show split) + summary table
+  - **Content Quality**: box plot (absolute) / violin plot (normalized) of IMDb distributions + quality tier breakdown table
+  - **Genre Landscape**: heatmap of top 15 genres × platforms with text annotations
+  - **Genre Deep Dive**: selectbox drill-down showing per-platform count, avg IMDb, and top 5 titles with styled cards
+  - Methodology expander explaining merged entity construction and normalization
+- ✅ Added `COMPARISON_MAX_COMPETITORS = 3` and `COMPARISON_TOP_GENRES = 15` to `src/config.py`
+
+### Files touched
+- `src/analysis/comparisons.py` — new: all comparison analysis functions
+- `pages/02_Platform_Comparisons.py` — replaced stub with full page
+- `src/config.py` — added comparison constants
 
 ### Next
--
+- [ ] Implement Page 3: Platform DNA
+- [ ] Add `tests/test_data_pipeline.py` to validate processed datasets
 
 ### Blockers
--
+- None
 
 ---
 
-## [Date] Week 5: Platform DNA
+## [2026-02-14] Title Deduplication with Multi-Platform Badges
 
 ### Done
--
+- ✅ **Title Deduplication** (`src/data/loaders.py`)
+  - Created `deduplicate_titles(df)`: groups by `id`, aggregates `platform` column into sorted `platforms` list
+  - Platform order follows `ALL_PLATFORMS` (netflix, max, disney, prime, paramount, appletv)
+  - Eliminates duplicate rows for titles appearing on multiple platforms
+  - Merged view: 9,167 → 9,158 rows (9 dual-platform titles like The Dark Knight, LOTR trilogy)
+  - All-platforms view: 25,246 → 23,357 rows (1,870 multi-platform titles, 19 on 3+ platforms)
+- ✅ **Home Page** (`Home.py`)
+  - Added `_platform_badges_html()` helper for rendering multiple colored badges
+  - `_render_title_cards()` now deduplicates before selecting top 20 — no more duplicate cards
+  - Cards show all platform badges (e.g., Netflix + Max badges side by side)
+- ✅ **Explore Catalog** (`pages/01_Explore_Catalog.py`)
+  - Deduplicates after quality score computation — results list shows unique titles
+  - Added `_platform_badges()` helper that handles both list and single platform
+  - Results list, detail view, and similar titles all show multi-platform badges
+  - Detail view label switches between "Platform" / "Platforms" based on count
+- ✅ **Similarity Module** (`src/analysis/similarity.py`)
+  - Uses `deduplicate_titles()` instead of `drop_duplicates` — aggregates platforms in results
+  - Similar titles return `platforms` column (list) instead of `platform` (string)
+- ✅ Updated `tests/test_similarity.py` scope filtering test for `platforms` column
+
+### Files touched
+- `src/data/loaders.py` — added `deduplicate_titles()`, imported `ALL_PLATFORMS`
+- `Home.py` — added `_platform_badges_html()`, dedup in `_render_title_cards()`
+- `pages/01_Explore_Catalog.py` — added `_platform_badges()`, dedup after quality score
+- `src/analysis/similarity.py` — uses `deduplicate_titles()`, returns `platforms`
+- `tests/test_similarity.py` — updated scope filtering assertion
 
 ### Next
--
+- [ ] Implement Page 3: Platform DNA
+- [ ] Add `tests/test_data_pipeline.py` to validate processed datasets
 
 ### Blockers
--
+- None
+
+---
+
+## [2026-02-14] Platform Comparisons — Major Enhancements (Round 2)
+
+### Done
+- **Analysis Module** (`src/analysis/comparisons.py`)
+  - `compute_market_positioning()`: per-platform bubble chart data (volume, avg IMDb, total popularity)
+  - `compute_age_profile()`: stacked bar data for age certification breakdown per platform
+  - `compute_geographic_diversity()`: % non-US titles per platform
+  - `compute_era_focus()`: median release year per platform
+  - `compute_strategic_insights()`: per-competitor SWOT-lite analysis (strengths/weaknesses/battlegrounds)
+  - Expanded `compute_genre_drilldown()` to return `id`, `description`, `age_certification`, `runtime`, `genres`, `tmdb_popularity` in top titles
+  - Added `QUALITY_TIERS` import for strategic insights tier comparison
+- **Page 2: Platform Comparisons** (`pages/02_Platform_Comparisons.py`)
+  - **Competitor Validation**: empty selection auto-defaults to Prime Video with warning
+  - **Market Positioning Matrix** (new section): scatter/bubble plot — x=catalog size, y=avg IMDb, bubble size=total popularity, quadrant labels + median reference lines
+  - **Content Profile** (new section, 3 columns): Age Certification stacked bar, International Content % metrics with delta vs merged, Content Recency median year metrics with delta
+  - **Interactive Genre Deep Dive Cards**: hover animation (translateY + boxShadow), Details/Close toggle button, expanded card shows metadata (type, runtime, rating, quality score), genre pills, description, cast & crew (directors + top 10 actors with characters)
+  - **Strategic Insights** (new section): per-competitor expanders with 3-column layout (Strengths, Merged Advantages, Battlegrounds) showing genre/tier comparisons with specific numbers
+  - Updated methodology expander to document all new sections
+  - Added `comp_expanded_title` session state for card expansion tracking
+
+### Files touched
+- `src/analysis/comparisons.py` — 5 new functions, expanded drilldown return columns
+- `pages/02_Platform_Comparisons.py` — 3 new sections, competitor validation, interactive cards, expanded methodology
+
+### Next
+- [ ] Implement Page 3: Platform DNA
+- [ ] Add `tests/test_data_pipeline.py` to validate processed datasets
+
+### Blockers
+- None
+
+---
+
+## [2026-02-14] Platform Comparisons — Visual & UX Polish (Round 3)
+
+### Done
+- **Analysis Module** (`src/analysis/comparisons.py`)
+  - Removed redundant `median_imdb` from `compute_volume_summary()` and `compute_genre_drilldown()` — avg IMDb is sufficient, medians were adding noise
+  - Rewrote `compute_strategic_insights()` to return structured, prioritized data: `summary` (volume/quality stats), `their_strengths`/`our_strengths` (top 4 sorted by magnitude), `battlegrounds` (list of genre names)
+- **Page 2: Platform Comparisons** (`pages/02_Platform_Comparisons.py`)
+  - **Genre Deep Dive expanded cards**: now render full-width below the columns instead of inside narrow columns — text is readable at any platform count
+  - **Expanded card layout**: 6-column metadata row, description + cast side-by-side, gold accent header with title and platform name
+  - **Strategic Insights redesign**: side-by-side competitor cards (not expanders), colored header with summary stats, concise natural language ("Where X leads" / "Where merged leads"), formatted values adapt to normalized mode
+  - **Genre heatmap**: Plasma colorscale (better on dark theme), cell gaps for cleaner grid, improved hover template, dynamic height
+  - **Normalized mode**: now applies to Genre Deep Dive stats (primary metric swaps between count and %), Strategic Insights (compares % of catalog instead of raw counts)
+  - **About These Comparisons**: moved to right after Quick Comparison box (separate from Strategic Insights), condensed to 4 focused paragraphs
+  - **Volume summary table**: removed Median IMDb column (redundant with Avg IMDb)
+
+### Files touched
+- `src/analysis/comparisons.py` — removed medians, rewrote strategic insights return structure
+- `pages/02_Platform_Comparisons.py` — expanded card full-width, insights redesign, heatmap styling, normalized mode, methodology relocation
+
+### Next
+- [ ] Implement Page 3: Platform DNA
+- [ ] Add `tests/test_data_pipeline.py` to validate processed datasets
+
+### Blockers
+- None
+
+---
+
+## [2026-02-14] Platform Comparisons — Final Polish (Round 4)
+
+### Done
+- **Page 2: Platform Comparisons** (`pages/02_Platform_Comparisons.py`)
+  - **Section descriptions**: added contextual captions below every section header explaining what each visualization shows and why it matters (Catalog Volume, Content Quality, Market Positioning, Content Profile, Genre Landscape, Genre Deep Dive, Strategic Insights)
+  - **Genre heatmap readability**: replaced single-color `texttemplate` with per-cell `add_annotation()` calls that compute adaptive text color — dark text (#1a0a2e) on bright Plasma cells (brightness > 70%), white text on dark cells
+  - **Market Positioning improvements**: switched to paper-relative quadrant labels (always visible in corners), mean-based reference lines with inline value labels (more stable with 3-5 platforms), added axis padding so bubbles don't crowd edges
+  - **Strategic Insights prose rewrite**: replaced data-dump rendering (raw numbers, percentages, bullet lists) with formal business-centric prose via `_build_insight_prose()` helper — generates 2-3 contextual insights per competitor covering scale/quality assessment, genre differentiation, and contested territory
+
+### Files touched
+- `pages/02_Platform_Comparisons.py` — section captions, heatmap annotations, market positioning layout, strategic insights prose
+
+### Next
+- [ ] Implement Page 3: Platform DNA
+- [ ] Add `tests/test_data_pipeline.py` to validate processed datasets
+
+### Blockers
+- None
+
+---
+
+## [2026-02-15] Platform Comparisons — Polish (Round 5)
+
+### Done
+- **Page 2: Platform Comparisons** (`pages/02_Platform_Comparisons.py`)
+  - **Content Profile ordering**: International Content and Content Recency metrics now always list the merged entity first, with competitors after
+  - **Genre heatmap colorscale**: replaced Plasma (bright yellow caused readability issues) with a custom dark indigo-to-violet gradient — white text is consistently readable on all cells
+  - **Quality Tier Breakdown**: capitalized index label from `tier` to `Tier`
+  - **Market Positioning enhancements**: taller chart (+150px), larger bubbles (size_max=70) with white edge outlines, subtle quadrant background shading, bolder quadrant labels, asymmetric y-axis padding (35% top vs 20% bottom) so text labels above the highest bubble aren't clipped
+  - **Age certification colors**: assigned distinctive custom `color_discrete_map` per rating (TV-MA red, R magenta, NC-17 purple, TV-14 orange, PG-13 gold, etc.) — no more same-shade confusion between R and Unknown
+  - Moved `import pandas as pd` to top-level (removed local import from `_render_expanded_card`)
+
+### Files touched
+- `pages/02_Platform_Comparisons.py` — Content Profile ordering, heatmap colorscale, tier capitalization, market positioning layout, age cert colors
+
+### Next
+- [ ] Implement Page 3: Platform DNA
+- [ ] Add `tests/test_data_pipeline.py` to validate processed datasets
+
+### Blockers
+- None
+
+---
+
+## [2026-02-15] Week 5: Platform DNA
+
+### Done
+- ✅ **Precomputation — UMAP Dimensionality Reduction**
+  - Created `scripts/04_compute_umap.py`: projects 23,357 deduplicated titles into 2D
+  - Features: TF-IDF description vectors (5,000 dims) + genre vectors (19 dims, 2x weighted)
+  - Reuses fitted TF-IDF vectorizer from script 03 (no redundant fitting)
+  - UMAP params: 15 neighbors, 0.1 min_dist, cosine metric, seed 42
+  - Output: `data/precomputed/dimensionality_reduction/umap_coords.parquet` (23,357 rows)
+  - Saved `models/umap_reducer.pkl` for potential reuse
+  - Runs in ~30 seconds on Apple Silicon
+- ✅ **Analysis Module** (`src/analysis/platform_dna.py`)
+  - `get_platform_titles()`: extracts per-platform data; "merged" deduplicates Netflix+Max
+  - `compute_genre_mix()`: top 10 genres + "Other" with counts and percentages (donut chart)
+  - `compute_era_profile()`: decade distribution ordered chronologically
+  - `compute_quality_profile()`: avg/median IMDb, quality tier counts/percentages, rated vs total
+  - `compute_defining_traits()`: 3-5 data-driven traits comparing platform vs all-platform average
+    - 6 trait categories: catalog freshness, quality positioning, content type mix, international diversity, signature genre, catalog scale
+  - `compute_platform_comparison_data()`: builds full profile dict for 1-2 platforms
+  - `compute_landscape_clusters()`: merges UMAP coords with title metadata, KMeans k=8 clusters
+  - `compute_cluster_summaries()`: per-cluster top genres, platform mix, avg IMDb, sample titles
+  - `compute_overlap_stats()`: Netflix vs Max cluster overlap/dominance metrics
+- ✅ **Cached Loaders** (`src/data/loaders.py`)
+  - Added `load_umap_coords()` with `@st.cache_data`
+- ✅ **Page 3: Platform DNA** (`pages/03_Platform_DNA.py`)
+  - Global sidebar filters (reuses filters.py pattern)
+  - **Section 1: Platform Personality Profile**
+    - Platform dropdown with 7 options (merged + 6 platforms)
+    - Optional side-by-side comparison (2 DNA cards)
+    - DNA card: styled header with platform color accent, 3 quality metrics, genre donut chart, era bar chart, quality tier horizontal bar, defining traits with direction indicators
+  - **Section 2: Content Landscape**
+    - UMAP scatter plot (23K points, colored by platform, hover with title/type/IMDb/year)
+    - Platform legend as horizontal bar above chart
+    - 8 content neighborhood cluster cards in 4x2 grid: top 3 genres, platform composition %, avg IMDb, top 4 sample titles
+    - Netflix + Max overlap metrics: shared clusters, dominated clusters, overlap rate
+    - Interpretive text adapts to overlap pattern (complementarity vs convergence)
+  - Methodology expander explaining profiles + UMAP + clustering
+  - Transparency footer
+- ✅ Added `DNA_TOP_GENRES=10`, `DNA_TOP_TRAITS=5`, `DNA_UMAP_SAMPLE_SIZE=200` to `src/config.py`
+- ✅ Updated `scripts/run_pipeline.sh` to include script 04
+
+### Files touched
+- `scripts/04_compute_umap.py` — new: UMAP precomputation
+- `src/analysis/platform_dna.py` — new: all platform DNA analysis functions
+- `src/data/loaders.py` — added `load_umap_coords()`
+- `pages/03_Platform_DNA.py` — replaced stub with full page
+- `src/config.py` — added DNA constants
+- `scripts/run_pipeline.sh` — added script 04
+
+### Next
+- [ ] Implement Page 4: Discovery Engine
+- [ ] Add `tests/test_data_pipeline.py` to validate processed datasets
+
+### Blockers
+- None
+
+---
+
+## [2026-02-15] Platform DNA — Major Overhaul (Round 2)
+
+### Done
+- ✅ **Apple TV Color Fix** (`src/config.py`)
+  - Changed `appletv.color` from `#000000` to `#A2AAAD` (Apple Silver) — readable on dark theme
+  - Changed `appletv.text_color` to `#1a1a2e` — dark text on light badge background
+  - Affects all pages globally (Home, Explore Catalog, Comparisons, DNA)
+- ✅ **New Analysis Functions** (`src/analysis/platform_dna.py`)
+  - `compute_platform_identity_radar()`: 6 normalized (0-100) dimensions — Freshness, Quality, Breadth, Global Reach, Genre Diversity, Series Focus
+  - `generate_cluster_name()`: auto-generates meaningful labels from top genres + era/quality qualifier
+  - `compute_platform_profile_vector()`: 7-dimension normalized profile per platform for matcher
+  - `compute_user_match_scores()`: scores user preferences against all 6 platforms — genre cosine (30%) + 6 slider dimensions (70%)
+  - Modified `compute_cluster_summaries()` to include auto-generated `name` key
+  - Modified `compute_platform_comparison_data()` to include radar data
+- ✅ **Cached Loader** (`src/data/loaders.py`)
+  - Added `load_platform_profiles()` — precomputes all 6 platform profile vectors with `@st.cache_data`
+- ✅ **Page 3: Platform DNA — Full Rewrite** (`pages/03_Platform_DNA.py`)
+  - **Methodology expander**: moved to standalone position at top of page (separate from content)
+  - **Normalized toggle**: added in controls row (matches Page 02 pattern)
+  - **CSS fix**: added overflow-wrap/word-break styles to prevent text cutoff in comparison mode
+  - **Section 1: Platform Identity Profile**: replaced genre donut + era bar + quality tier bar with radar chart (Scatterpolar, 6 axes). Comparison mode overlays both platform traces on same radar. Kept compact metrics row and defining traits.
+  - **Section 2: Content Landscape**: replaced 23K-point scatter with density contour plot (Histogram2dContour per platform). Added platform highlight multiselect for optional point overlay (sampled, max 500 per platform). Cluster center annotations with auto-generated names on the plot.
+  - **Section 3: Content Neighborhoods**: redesigned cluster cards with named headers (gold accent), genre pills, flex layout metadata, border-top divider before sample titles, better spacing (12px margin). Normalized toggle switches platform counts ↔ percentages. Netflix+Max overlap stats kept.
+  - **Section 4: What Platform Are You?** (NEW): user form with genre multiselect + 6 labeled sliders in 2 columns. Results: hero card with best match platform + %, bar chart of all 6 platforms, per-platform explanation cards.
+- ✅ **Redundancy Reduction**: removed genre donut, era bar, and quality tier bar (all available on Page 02). Replaced with unique radar fingerprint.
+- ✅ Added DNA config constants: `DNA_N_CLUSTERS`, `DNA_CONTOUR_NBINS`, `DNA_MATCHER_GENRE_WEIGHT`, `DNA_MATCHER_SLIDER_WEIGHT`
+
+### Files touched
+- `src/config.py` — Apple TV color, new DNA constants
+- `src/analysis/platform_dna.py` — 4 new functions, 2 modified
+- `src/data/loaders.py` — added `load_platform_profiles()`
+- `pages/03_Platform_DNA.py` — full rewrite (4 sections, ~800 lines)
+
+### Next
+- [ ] Implement Page 4: Discovery Engine
+- [ ] Add `tests/test_data_pipeline.py` to validate processed datasets
+
+### Blockers
+- None
+
+---
+
+## [2026-02-15] Platform DNA — Round 3 Fixes (8 Phases)
+
+### Done
+- ✅ **Phase 1: Fix Content Landscape Tooltip** (`pages/03_Platform_DNA.py`)
+  - Changed `hoverinfo="name"` to `hoverinfo="skip"` on Histogram2dContour traces
+  - Density contours no longer show misleading platform names on hover
+- ✅ **Phase 2: Standardize Top Titles** (`src/analysis/platform_dna.py`)
+  - Replaced `nlargest(5, "imdb_score")` with `compute_quality_score()` + progressive vote thresholds (10K→1K→0)
+  - Matches the standard methodology used on Home, Explore, and Comparisons pages
+  - Added `imdb_votes`, `tmdb_popularity`, and other metadata columns to `compute_landscape_clusters()` keep_cols
+- ✅ **Phase 3: Unique Cluster Names** (`src/analysis/platform_dna.py`)
+  - Redesigned `generate_cluster_name()` with expanded signature: top_genres, avg_year, avg_imdb, movie_pct, dominant_platform, used_names
+  - When top 2 genres are both Drama+Comedy (common), swaps one with 3rd genre
+  - Expanded qualifiers: Classics, Premium, Vault, Cinema, Series, {Platform} Zone, Hub
+  - Deduplication: tries each qualifier until unique name found; falls back to era decade
+  - Updated `compute_cluster_summaries()` to compute type_mix, dominant_platform, leaders, and pass used_names set
+- ✅ **Phase 4: Content Landscape Interactivity** (`pages/03_Platform_DNA.py`)
+  - Added title search input above the map — highlights matching titles with gold star markers
+  - Search results shown below map with title, platform, IMDb, and neighborhood info
+  - Added "Explore a neighborhood" selectbox below the map
+  - Neighborhood expander shows: quality metrics (4-col), platform breakdown bar, top 10 titles (quality_score ranked, 2-col grid)
+- ✅ **Phase 5: Radar Chart Explainer** (`pages/03_Platform_DNA.py`)
+  - Added "What do the radar dimensions mean?" expander below radar chart (both single and compare modes)
+  - Table explaining all 6 dimensions with scale descriptions
+- ✅ **Phase 6: Distinctive Defining Traits** (`src/analysis/platform_dna.py`)
+  - Extracted `_compute_all_platform_stats()` shared helper (used by radar + traits)
+  - Added `_rank_among()` helper for superlative labels ("highest of all 6 platforms", "2nd highest")
+  - Rewrote all 6 trait types with concrete numbers: actual counts, percentages, comparison values, and platform rankings
+  - Example: "Volume Leader: 9,058 titles — 2.4x industry average (vs 3,773 avg per platform). Highest of all 6 platforms"
+- ✅ **Phase 7: Removed Overlap Analysis** (`pages/03_Platform_DNA.py`)
+  - Deleted "Netflix + Max: Overlap & Divergence" section (60+ lines)
+  - Removed `compute_overlap_stats` import (function kept in platform_dna.py for Strategic Insights page)
+- ✅ **Phase 8: Insight Callouts** (`pages/03_Platform_DNA.py`)
+  - Auto-generated key insight above density map: identifies most separated and most overlapping platform pairs
+  - Added per-neighborhood leaders in cluster cards: Volume leader + Quality leader (with platform colors)
+
+### Files touched
+- `src/analysis/platform_dna.py` — 3 new helpers, 3 functions rewritten, 1 function updated
+- `pages/03_Platform_DNA.py` — tooltip fix, interactivity, radar explainer, overlap removal, insight callouts, leaders
+
+### Next
+- [ ] Implement Page 4: Discovery Engine
+- [ ] Add `tests/test_data_pipeline.py` to validate processed datasets
+
+### Blockers
+- None
+
+---
+
+## [2026-02-17] Platform DNA — Round 4: Comprehensive Revamp
+
+### Done
+- ✅ **Phase 1: Thematic Hub Naming** (`src/analysis/platform_dna.py`)
+  - Completely rewrote `generate_cluster_name()` with rule-based archetype matching
+  - 15 thematic archetypes: "Prestige Drama Hub", "Dark Thriller Hub", "Kids & Animation Hub", etc.
+  - Uses cluster signals: certification mix (family_pct, mature_pct), intl_pct, median_votes, genre composition
+  - Deduplication with contextual differentiators: (International), (Series), (Classics), (Premium)
+- ✅ **Phase 2: Narrative Defining Traits** (`src/analysis/platform_dna.py`)
+  - Rewrote `compute_defining_traits()` with personality-driven labels and narrative details
+  - Old: "Volume Leader" / "9,058 titles — 1.5x industry average"
+  - New: "The Content Giant" / "With 9,058 titles, Netflix has the biggest library in streaming"
+  - 11 trait types with platform names woven into natural sentences
+- ✅ **Phase 3: Multi-Insight Landscape Callout** (`src/analysis/platform_dna.py`)
+  - Added `compute_landscape_insights()` function returning 3-4 insights with HTML-colored platform names
+  - Insight types: separation, overlap, concentration/focus, cluster ownership
+  - Replaced single robotic sentence with styled multi-bullet card
+- ✅ **Phase 4: Remove Redundancy + Enhance Explorer** (`pages/03_Platform_DNA.py`)
+  - Deleted entire Content Neighborhoods card grid (~120 lines) — fully redundant with explorer
+  - Enhanced neighborhood explorer: direct rendering (no expander), genre pills, leader tags, auto-description
+  - Added UMAP highlight: selecting a neighborhood highlights its points on the density map
+  - Moved neighborhood selectbox into controls row above the chart
+  - Title cards now show genre tags
+- ✅ **Phase 5: Tooltips Everywhere** (`pages/03_Platform_DNA.py`)
+  - Added `help=` to all 6 `st.metric()` calls: Avg IMDb, Rated Titles, Titles, Premium %, Median Year
+- ✅ **Phase 6: Number Formatting** (`pages/03_Platform_DNA.py`)
+  - IMDb scores: `.2f` everywhere (was `.1f` in some places)
+  - Percentages: `.1f%` everywhere (was `.0f%` in some places)
+  - Match percentages: `.1f%` (was `.0f%`)
+- ✅ **Phase 7: Loading States + Empty States** (`pages/03_Platform_DNA.py`)
+  - Added `st.spinner("Mapping the content landscape...")` around UMAP computation
+  - Added `st.spinner("Finding your perfect platform match...")` around matcher
+  - Added empty state guards: no profiles, no cluster summaries, no matcher results
+- ✅ **Phase 8: Platform Colors in Insights** (`src/analysis/platform_dna.py`)
+  - `compute_landscape_insights()` wraps platform names in colored HTML spans
+- ✅ **Phase 9: Your Viewing DNA** (`pages/03_Platform_DNA.py`)
+  - Added personality card after matcher results summarizing user preferences in natural language
+  - Maps slider values to traits: "new release hunter", "global cinema explorer", "series binger", etc.
+- ✅ **Code cleanup**: deduplicated radar dimension table into `_RADAR_DIMENSION_TABLE` constant, updated trait renderer to narrative em-dash style
+
+### Files touched
+- `src/analysis/platform_dna.py` — `generate_cluster_name()` rewritten, `compute_defining_traits()` rewritten, `compute_landscape_insights()` added
+- `pages/03_Platform_DNA.py` — grid deleted, explorer enhanced, traits restyled, insights multi-bullet, tooltips, formatting, spinners, empty states, viewing DNA card
+
+### Next
+- [ ] Implement Page 4: Discovery Engine
+- [ ] Add `tests/test_data_pipeline.py` to validate processed datasets
+
+### Blockers
+- None
 
 ---
 

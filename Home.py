@@ -20,6 +20,7 @@ from src.config import (
     PLOTLY_TEMPLATE,
 )
 from src.data.loaders import (
+    deduplicate_titles,
     get_credits_for_view,
     get_titles_for_view,
     load_merged_credits,
@@ -270,9 +271,24 @@ df["quality_score"] = compute_quality_score(df)
 tab_movies, tab_shows = st.tabs(["Top Movies", "Top Shows"])
 
 
+def _platform_badges_html(platforms):
+    """Generate inline HTML badges for a list of platform keys."""
+    badges = []
+    for key in platforms:
+        info = PLATFORMS.get(key, {})
+        name = info.get("name", key.title())
+        color = info.get("color", "#555")
+        badges.append(
+            f'<span style="background:{color};color:#fff;padding:2px 8px;border-radius:4px;'
+            f'font-size:0.75em;font-weight:600;margin-right:3px;">{name}</span>'
+        )
+    return "".join(badges)
+
+
 def _render_title_cards(subset, tab_prefix: str):
     """Render a 4-column grid of title cards for the top 20 titles."""
-    top = subset.nlargest(20, "quality_score")
+    deduped = deduplicate_titles(subset)
+    top = deduped.nlargest(20, "quality_score")
     if len(top) == 0:
         st.info("No titles match the current filters.")
         return
@@ -281,10 +297,7 @@ def _render_title_cards(subset, tab_prefix: str):
     for row_chunk in rows:
         cols = st.columns(4)
         for col, (_, title) in zip(cols, row_chunk.iterrows()):
-            plat_key = title["platform"]
-            plat_info = PLATFORMS.get(plat_key, {})
-            plat_name = plat_info.get("name", plat_key.title())
-            plat_color = plat_info.get("color", "#555")
+            plat_badges = _platform_badges_html(title["platforms"])
             imdb = title["imdb_score"]
             imdb_str = f"{imdb:.1f}" if imdb == imdb else "N/A"
             votes_str = format_votes(title.get("imdb_votes"))
@@ -299,8 +312,7 @@ def _render_title_cards(subset, tab_prefix: str):
                     onmouseout="this.style.transform='none';this.style.boxShadow='none'">
                     <div style="font-size:0.95em;font-weight:700;line-height:1.3;margin-bottom:6px;">
                     {title['title']}<span style="color:{CARD_TEXT_MUTED};font-weight:400;"> ({int(title['release_year'])})</span></div>
-                    <span style="background:{plat_color};color:#fff;padding:2px 8px;border-radius:4px;
-                    font-size:0.75em;font-weight:600;">{plat_name}</span>
+                    {plat_badges}
                     <span style="background:{CARD_BORDER};color:#ccc;padding:2px 8px;border-radius:4px;
                     font-size:0.75em;margin-left:4px;">{title['type']}</span>
                     <div style="margin-top:8px;font-size:0.85em;color:{CARD_TEXT};">
@@ -330,10 +342,10 @@ with st.expander("How Rankings Work"):
 with 8.9 from 100K votes. Raw scores from small samples are unreliable.
 
 **How it works:**
-- **Bayesian IMDb** (70% weight): Adjusts raw scores based on vote count credibility.
+- **Bayesian IMDb** (85% weight): Adjusts raw scores based on vote count credibility.
   Titles with fewer votes are pulled toward the global average (6.5), while heavily-voted
   titles keep their earned score.
-- **Normalized Popularity** (30% weight): TMDB popularity scaled to 0-10, rewarding
+- **Normalized Popularity** (15% weight): TMDB popularity scaled to 0-10, rewarding
   titles with broad audience reach.
 
 *Formula: (votes / (votes + 10K)) * IMDb + (10K / (votes + 10K)) * 6.5*"""

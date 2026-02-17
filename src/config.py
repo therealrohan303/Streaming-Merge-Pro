@@ -57,8 +57,8 @@ PLATFORMS = {
     },
     "appletv": {
         "name": "Apple TV+",
-        "color": "#000000",
-        "text_color": "#FFFFFF",
+        "color": "#A2AAAD",  # Apple Silver — readable on dark backgrounds
+        "text_color": "#1a1a2e",
     },
 }
 
@@ -143,6 +143,25 @@ QUALITY_TIERS = {
     "Below Average": (5.0, 6.0),
     "Poor": (0.0, 5.0),
 }
+
+# =============================================================================
+# PLATFORM COMPARISONS
+# =============================================================================
+
+COMPARISON_MAX_COMPETITORS = 3
+COMPARISON_TOP_GENRES = 15
+
+# =============================================================================
+# PLATFORM DNA
+# =============================================================================
+
+DNA_TOP_GENRES = 10  # Number of genres in radar/profile charts
+DNA_TOP_TRAITS = 5   # Max defining traits per platform
+DNA_UMAP_SAMPLE_SIZE = 500  # Max point overlay per platform on density plot
+DNA_N_CLUSTERS = 8
+DNA_CONTOUR_NBINS = 25  # Resolution for density contour plot
+DNA_MATCHER_GENRE_WEIGHT = 0.30  # Genre cosine similarity weight in matcher
+DNA_MATCHER_SLIDER_WEIGHT = 0.70  # Combined weight for 6 slider dimensions
 
 # =============================================================================
 # LOGGING
