@@ -560,78 +560,252 @@
 
 ---
 
-## [Date] Week 6-7: Discovery Engine
+## [2026-02-20] Enrichment Pipeline + Config
 
 ### Done
--
+- ✅ **Config updates** (`src/config.py`)
+  - Added `ENRICHED_DIR`, `CACHE_DIR`, `PRECOMPUTED_DIR`, `MODELS_DIR` paths
+  - Added enrichment coverage thresholds: `WIKIDATA_MIN_COVERAGE=0.20`, `WIKIDATA_COMPARISON_MIN_COVERAGE=0.15`, `TMDB_MIN_COVERAGE=0.15`
+  - Added hybrid scoring weights for Discovery Engine vibe search
+  - Added model paths: `GREENLIGHT_MOVIE_MODEL`, `GREENLIGHT_SHOW_MODEL`
+  - Added network params: `NETWORK_MIN_TITLES=3`, `NETWORK_MIN_EDGE_WEIGHT=2`
+- ✅ **Created `.env`** with TMDB API key
+- ✅ **Script 05: `scripts/05_enrich_imdb.py`**
+  - Streams `title.principals.tsv.gz` in chunks, filters to our `imdb_id` set
+  - Extracts writer/producer/composer/cinematographer roles from IMDb principals
+  - Joins `name.basics` for person names, `title.basics` for originalTitle/isAdult
+  - Output: `data/enriched/imdb_enrichment.parquet`, `data/enriched/imdb_principals.parquet`
+- ✅ **Script 06: `scripts/06_enrich_wikidata.py`**
+  - Batch SPARQL queries (50 IMDb IDs per request) to Wikidata
+  - Pulls: budget_usd (P2130), box_office_usd (P2142), award_wins (P166 count), award_noms (P1411 count)
+  - Resumable caching to `data/cache/wikidata/` as JSON
+  - Output: `data/enriched/wikidata_enrichment.parquet` with `data_confidence` column
+- ✅ **Script 07: `scripts/07_enrich_movielens.py`**
+  - Joins MovieLens 20M via `links.csv` using imdbId
+  - Top 20 genome tags per movie by relevance, dense genome vectors
+  - Output: `data/enriched/movielens_genome.parquet`, `data/precomputed/embeddings/genome_vectors.npy`, `data/precomputed/embeddings/genome_id_map.parquet`
+- ✅ **Script 08: `scripts/08_enrich_tmdb.py`** (still running ~48%)
+  - TMDB "Find by IMDb ID" → keywords, collections, production companies, poster_url
+  - Per-response caching to `data/cache/tmdb/{imdb_id}.json`
+  - Rate limited at 40 req/10 sec
+  - Output: `data/enriched/tmdb_enrichment.parquet`
+- ✅ **Script 09: `scripts/09_build_enriched_titles.py`**
+  - Left-joins all 4 enrichment parquets on `imdb_id`
+  - Computes `data_confidence` = fraction of enrichment fields non-null per row
+  - Adds `imdb_writers` and `imdb_producers` list columns from principals
+  - Output: `data/enriched/titles_enriched.parquet`
 
-### Next
--
-
-### Blockers
--
+### Files touched
+- `src/config.py` — enrichment config constants
+- `.env` — TMDB API key
+- `scripts/05_enrich_imdb.py` — new
+- `scripts/06_enrich_wikidata.py` — new
+- `scripts/07_enrich_movielens.py` — new
+- `scripts/08_enrich_tmdb.py` — new
+- `scripts/09_build_enriched_titles.py` — new
 
 ---
 
-## [Date] Week 8: Strategic Insights
+## [2026-02-20] ML Training + Precomputation (Scripts 10-12)
 
 ### Done
--
+- ✅ **Script 10: `scripts/10_train_predictor.py`**
+  - GradientBoostingRegressor for movies and shows (separate models)
+  - Features: genre vector, runtime, release_year, country tier, has_franchise, budget_tier, award_genre_avg
+  - 5-fold CV with RMSE + baseline RMSE reporting
+  - Output: `models/greenlight_movie_predictor.pkl`, `models/greenlight_show_predictor.pkl`
+- ✅ **Script 11: `scripts/11_precompute_strategic.py`**
+  - Prestige index: award wins per 1,000 titles by platform and genre
+  - Acquisition targets: gap recommendations with decision trace fields
+  - Output: `data/precomputed/strategic_analysis/prestige_index.parquet`, `acquisition_targets.parquet`
+- ✅ **Script 12: `scripts/12_precompute_network.py`**
+  - Collaboration edges from `imdb_principals.parquet` (all role categories) + credits
+  - PageRank on collaboration graph, Louvain community detection (`python-louvain`)
+  - Per-person stats: avg IMDb, title count, career span, top genre, influence score
+  - Fixed mixed int/str person_id issue (credits=int, principals=string) with upfront `.astype(str)`
+  - Output: `data/precomputed/network/edges.parquet`, `data/precomputed/network/person_stats.parquet`
 
-### Next
--
-
-### Blockers
--
+### Files touched
+- `scripts/10_train_predictor.py` — new
+- `scripts/11_precompute_strategic.py` — new
+- `scripts/12_precompute_network.py` — new (fixed 3x: mixed type sort, perf, arrow serialization)
 
 ---
 
-## [Date] Week 9: Interactive Lab
+## [2026-02-20] Analysis Modules + Loaders + Tests
 
 ### Done
--
+- ✅ **`src/analysis/discovery.py`** — Discovery Engine analysis
+  - `get_similar_with_explanation()`: why-similar explanations (genre overlap, shared crew, matched tags)
+  - `preference_based_search()`: multi-criteria filtering with fit score
+  - `vibe_search()`: hybrid NLP search (description embeddings + keyword matching + genome tags)
+  - Session history management (last 10 recommendation sets)
+- ✅ **`src/analysis/strategic.py`** — Strategic Insights analysis
+  - `compute_merger_kpis()`: 4 headline KPIs with tooltips
+  - `compute_prestige_index()`: award wins per 1,000 titles
+  - `compute_content_overlap()`: genre/type/decade heatmap + audit table
+  - `compute_gap_analysis()`: gap recommendations with decision trace
+  - `compute_ip_synergy()`: top franchises pre/post-merger
+  - `compute_competitive_positioning()`: per-competitor SWOT
+  - `compute_market_simulation()`: catalog share, quality-weighted share, HHI
+- ✅ **`src/analysis/lab.py`** — Interactive Lab analysis
+  - `streaming_service_builder()`: budget game with title value and live dashboard
+  - `predict_title_score()`: greenlight prediction with uncertainty + feature importances
+  - `generate_insights()`: fun facts insight pool with "Surprise me!" support
+- ✅ **`src/analysis/network.py`** — Cast & Crew Network analysis
+  - `search_person()`: person search with role filter
+  - `get_person_profile()`: career stats, top collaborators, career trend line
+  - `get_community_info()`: Louvain community details
+  - `get_influence_rankings()`: PageRank-based rankings with role tabs
+  - `compare_persons()`: side-by-side person comparison
+- ✅ **`src/data/loaders.py`** — new loaders
+  - `load_enriched_titles()` — fallback to base titles if enriched not available
+  - `load_genome_vectors()` — (vectors_np, id_map_df) tuple
+  - `load_network_edges()` and `load_person_stats()`
+  - `load_greenlight_model(type)` — 'movie' or 'show', `@st.cache_resource`
+- ✅ **`tests/test_enrichment.py`** — enrichment validation
+  - Validates titles_enriched.parquet columns and data_confidence range
+  - Validates imdb_principals.parquet role categories
+  - Validates genome vectors shape matches id_map length
+- ✅ **`tests/test_analysis.py`** — analysis logic sanity checks
 
-### Next
--
-
-### Blockers
--
+### Files touched
+- `src/analysis/discovery.py` — new
+- `src/analysis/strategic.py` — new
+- `src/analysis/lab.py` — new
+- `src/analysis/network.py` — new
+- `src/data/loaders.py` — 5 new loader functions
+- `tests/test_enrichment.py` — new
+- `tests/test_analysis.py` — new
 
 ---
 
-## [Date] Week 10: Cast & Crew Network
+## [2026-02-20] Pages 4-7: Discovery Engine, Strategic Insights, Interactive Lab, Cast & Crew Network
 
 ### Done
--
+- ✅ **Page 4: Discovery Engine** (`pages/04_Discovery_Engine.py`)
+  - Tab 1: Similar to a Title — autocomplete search, platform scope, results count slider, "Why similar?" expanders
+  - Tab 2: Preference-Based — genre multiselect, min IMDb, type toggle, runtime slider, year range, popular↔hidden gems
+  - Tab 3: Vibe Search (NLP) — text area input, sentence-transformer embeddings, detected signals display, hybrid scoring
+  - Session History: last 10 recommendation sets, user marking (Interested/Watched/Not Interested)
+- ✅ **Page 5: Strategic Insights** (`pages/05_Strategic_Insights.py`)
+  - 7 sections: Merger Value Dashboard, Prestige Index, Content Overlap, Gap Analysis with Decision Trace, IP Synergy Map, Competitive Positioning, Market Impact Simulation
+  - Conditional sections based on Wikidata/TMDB coverage thresholds
+- ✅ **Page 6: Interactive Lab** (`pages/06_Interactive_Lab.py`)
+  - Build Your Streaming Service — budget game, title value, live dashboard, compare vs Netflix+Max
+  - Hypothetical Title Predictor — separate movie/show models, predicted IMDb ± uncertainty, feature importances chart, model card expander, talent suggestions
+  - Insight Generator — fun facts tone, scope dropdown, "Surprise me!" button
+- ✅ **Page 7: Cast & Crew Network** (`pages/07_Cast_Crew_Network.py`)
+  - Person Search & Profile — role filter (incl. writer/producer/composer/cinematographer), awards context, career trend line, top collaborators
+  - Community Detection — Louvain creative circles, cross-platform bridges
+  - Influence Scoring — PageRank × avg IMDb × (1 + normalized awards), top 50
+  - Rankings — Directors/Actors/Writers tabs, multiple ranking modes, side-by-side compare
 
-### Next
--
-
-### Blockers
--
+### Files touched
+- `pages/04_Discovery_Engine.py` — new
+- `pages/05_Strategic_Insights.py` — new
+- `pages/06_Interactive_Lab.py` — new
+- `pages/07_Cast_Crew_Network.py` — new
 
 ---
 
-## [Date] Week 11: Integration & Optimization
+## [2026-02-20] Existing Page Enhancements + Pipeline Update
 
 ### Done
--
+- ✅ **Home.py** enhancements
+  - 5th hero metric: "Award-Winning Titles" (conditional on ≥20% Wikidata coverage)
+  - Poster thumbnails on top title cards via enriched data `poster_url`
+- ✅ **Explore Catalog** (`pages/01_Explore_Catalog.py`) enhancements
+  - Poster image at top of detail panel
+  - Award badge: "🏆 X wins, Y nominations" from Wikidata
+  - Box office in metadata captions (Wikidata)
+  - "For deeper recommendations → Discovery Engine" link after similar titles
+- ✅ **Platform Comparisons** (`pages/02_Platform_Comparisons.py`) enhancements
+  - "Prestige Score" column in summary table (award wins per 1,000 titles, "—" if <15% coverage)
+  - "Top Franchises" row in genre drill-down expanded card (from TMDB `collection_name`)
+- ✅ **Platform DNA** (`pages/03_Platform_DNA.py`) enhancements
+  - Cluster cards: dominant franchise if ≥3 titles in cluster
+  - Awards-based trait in neighborhood explorer ("Awards Magnet: X wins, Y per 1,000 titles")
+  - Added awards-based defining trait (Trait 7) in `src/analysis/platform_dna.py`
+- ✅ **Updated `scripts/run_pipeline.sh`** — all 12 scripts in 3 phases
 
-### Next
--
+### Files touched
+- `Home.py` — award metric, poster thumbnails
+- `pages/01_Explore_Catalog.py` — poster, awards, box office, discovery link
+- `pages/02_Platform_Comparisons.py` — prestige score, franchises
+- `pages/03_Platform_DNA.py` — franchises, awards trait
+- `src/analysis/platform_dna.py` — awards-based defining trait
+- `scripts/run_pipeline.sh` — scripts 05-12 added
 
 ### Blockers
--
+- Script 08 (TMDB API) still running (~48% done, ~10K/21K titles cached)
 
 ---
 
-## [Date] Week 12: Final Polish & Deployment
+## [2026-02-21] Bug Fixes, Cross-Page Standardization, and Polish
 
 ### Done
--
+
+#### TMDB Enrichment Complete
+- ✅ Script 08 finished: 21,407/21,408 titles (1 error)
+  - `poster_url`: 91.6% coverage (19,601 titles)
+  - `production_companies`: 76.6% (16,402)
+  - `tmdb_keywords`: 63.8% (13,651)
+  - `collection_name`: 8.4% (1,796)
+- ✅ Re-ran `scripts/09_build_enriched_titles.py` — 25,246 rows, 34 columns, avg confidence 0.397
+- ✅ Re-ran `scripts/11_precompute_strategic.py` — prestige index (105 rows) + 34 acquisition targets
+
+#### Phase 1: Critical Bug Fixes
+- ✅ **Pages 4 & 6**: Fixed `compute_quality_score()` misuse — was `df = compute_quality_score(df)` replacing DataFrame with Series; fixed to `df["quality_score"] = compute_quality_score(df)`
+- ✅ **Discovery Engine (`src/analysis/discovery.py`)**: Fixed parameter order in `get_similar_titles()` call (was `titles_df, sim_df`, should be `sim_df, titles_df`); removed invalid `scope` kwarg
+- ✅ **Discovery Engine (page)**: Fixed `render_sidebar_filters()` call — was passing `st.sidebar` as the dataframe argument; fixed to standard pattern
+- ✅ **Discovery Engine (`src/analysis/discovery.py`)**: Found and fixed 2 more `= compute_quality_score(df)` misuses in `preference_based_recommendations()` and `vibe_search()` — these would have crashed preference-based and vibe search tabs
+- ✅ **Cast & Crew Network loaders** (`src/data/loaders.py`): Fixed `load_network_edges()` empty schema (removed nonexistent `shared_titles` column); fixed `load_person_stats()` empty schema to include all 14 actual columns
+- ✅ **Network analysis** (`src/analysis/network.py`): Fixed `filmography.get("award_wins")` misuse (`.get()` on DataFrame); replaced with proper `if "award_wins" in filmography.columns:` check
+- ✅ **Cast & Crew page**: Added `credits["person_id"].astype(str)` to fix type mismatch (credits=int, person_stats=str from script 12); improved diagnostic messages for missing data
+- ✅ **Home page**: Fixed raw HTML rendering in title cards (multi-line f-string template issue)
+
+#### Phase 2: Cross-Page Standardization
+- ✅ Created shared `src/ui/badges.py` with `platform_badge_html()` and `platform_badges_html()` — canonical badge rendering using `text_color` from PLATFORMS config
+- ✅ Replaced 3 duplicate badge implementations:
+  - `Home.py` — removed local `_platform_badges_html()`, imported shared helper
+  - `pages/01_Explore_Catalog.py` — removed local `_platform_badge()` + `_platform_badges()`, imported shared helper
+  - `pages/04_Discovery_Engine.py` — removed local `_platform_badge()` + `_platform_badges()`, imported shared helper
+- ✅ Cleaned up unused imports in Discovery Engine (`ALL_PLATFORMS`, `PLATFORMS`, `PLOTLY_TEMPLATE`, `get_credits_for_view`)
+- ✅ Verified all `compute_quality_score()` call sites across entire codebase — all 13 instances use correct `df["col"] = compute_quality_score(df)` pattern
+
+#### Phase 3: Strategic Insights Polish
+- ✅ **Removed Section 6 (Competitive Positioning)** — redundant with Page 2's Strategic Insights section (genre leads, battlegrounds, SWOT analysis already covered there)
+- ✅ **Section 3 (Content Overlap)**: Added complementarity score metric, replaced grouped bar with stacked bar (Netflix Exclusive / Shared / Max Exclusive), data-driven strategic implication text citing specific genres
+- ✅ **Section 4 (Gap Analysis)**: Added summary metrics (total/high/medium gaps), replaced flat table with card-style rendering using severity-colored left borders
+- ✅ **Section 5 (IP Synergy)**: Better fallback showing TMDB enrichment progress (reads cache to show X/Y progress); added column formatting for dataframes; added cross-platform franchise detection
+- ✅ **Section 6 (Market Simulation, was 7)**: Added pre-merger vs post-merger side-by-side pie charts; replaced plain HHI metric with gauge visualization + threshold legend card
+- ✅ Removed unused imports: `compute_competitive_positioning`, `render_sidebar_filters`, `apply_filters`, `WIKIDATA_COMPARISON_MIN_COVERAGE`
+
+#### Phase 4: Cast & Crew Network Robustness
+- ✅ Added defensive `platform_list` handling in `get_community_details()` — checks column existence, handles stringified lists from parquet
+- ✅ Added defensive `platform_list` handling in `get_cross_platform_bridges()` — `_parse_platform_list()` helper, early return if column missing
+
+#### Verification
+- ✅ All 21 tests pass (21/21) — including previously-failing TMDB enrichment test
+
+### Files touched
+- `src/ui/badges.py` — **new**: shared platform badge rendering
+- `src/analysis/discovery.py` — param order fix, removed `scope` kwarg, 2 quality score fixes
+- `src/analysis/network.py` — award_wins fix, platform_list defensive handling
+- `src/analysis/strategic.py` — no changes (page-side only)
+- `src/data/loaders.py` — network loader empty schema fixes
+- `Home.py` — shared badge import, HTML template fix
+- `pages/01_Explore_Catalog.py` — shared badge import, removed local helpers
+- `pages/04_Discovery_Engine.py` — shared badge import, sidebar fix, removed local helpers, cleaned imports
+- `pages/05_Strategic_Insights.py` — full rewrite: removed Section 6, improved Sections 3-5 and 7
+- `pages/06_Interactive_Lab.py` — quality score fix
+- `pages/07_Cast_Crew_Network.py` — person_id type fix, diagnostic messages
 
 ### Next
--
+- [ ] Manual page-by-page testing (`streamlit run Home.py`)
+- [ ] Final integration verification of all 8 pages
+- [ ] Update PROGRESS_LOG to mark project as feature-complete
 
 ### Blockers
--
+- None

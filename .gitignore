@@ -35,13 +35,8 @@ ENV/
 .streamlit/secrets.toml
 
 # Data
-# Keep raw data, but ignore processed artifacts to save space
-data/precomputed/
-data/interim/*.parquet
-data/processed/*.parquet
+data/
 
-# Optional: Uncomment if raw CSVs are very large (>100MB each)
-data/raw/*.csv
 
 # Models
 # Ignore large model files (>100MB)
@@ -52,8 +47,6 @@ models/*.h5
 models/*.pt
 models/*.pth
 
-# Embeddings (can be large)
-data/precomputed/embeddings/*.npy
 
 # Keep model configs (small JSON files)
 !models/*_config.json

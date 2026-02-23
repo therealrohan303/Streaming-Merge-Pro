@@ -17,6 +17,8 @@ RAW_DIR = DATA_DIR / "raw"
 INTERIM_DIR = DATA_DIR / "interim"
 PROCESSED_DIR = DATA_DIR / "processed"
 PRECOMPUTED_DIR = DATA_DIR / "precomputed"
+ENRICHED_DIR = DATA_DIR / "enriched"
+CACHE_DIR = DATA_DIR / "cache"
 MODELS_DIR = PROJECT_ROOT / "models"
 ASSETS_DIR = PROJECT_ROOT / "assets"
 
@@ -94,6 +96,26 @@ SIMILARITY_STORE_TOP_K = 50  # Store 50 neighbors offline; pages filter to TOP_K
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"  # Sentence-BERT model
 EMBEDDING_DIM = 384  # Dimension of all-MiniLM-L6-v2
 
+# Hybrid Scoring Weights (Discovery Engine Tab 3: Vibe Search)
+HYBRID_DESC_WEIGHT = 0.35
+HYBRID_GENRE_WEIGHT = 0.25
+HYBRID_GENOME_WEIGHT = 0.15
+HYBRID_QUALITY_WEIGHT = 0.15
+HYBRID_AWARDS_WEIGHT = 0.10
+
+# Enrichment Coverage Thresholds
+WIKIDATA_MIN_COVERAGE = 0.20
+WIKIDATA_COMPARISON_MIN_COVERAGE = 0.15
+TMDB_MIN_COVERAGE = 0.15
+
+# Model Paths
+GREENLIGHT_MOVIE_MODEL = MODELS_DIR / "greenlight_movie_predictor.pkl"
+GREENLIGHT_SHOW_MODEL = MODELS_DIR / "greenlight_show_predictor.pkl"
+
+# Network Analysis
+NETWORK_MIN_TITLES = 3    # Min titles for a person to be included in network
+NETWORK_MIN_EDGE_WEIGHT = 2  # Min shared titles for an edge
+
 # =============================================================================
 # UI CONFIGURATION
 # =============================================================================
@@ -158,10 +180,15 @@ COMPARISON_TOP_GENRES = 15
 DNA_TOP_GENRES = 10  # Number of genres in radar/profile charts
 DNA_TOP_TRAITS = 5   # Max defining traits per platform
 DNA_UMAP_SAMPLE_SIZE = 500  # Max point overlay per platform on density plot
-DNA_N_CLUSTERS = 8
+DNA_N_CLUSTERS = 10
 DNA_CONTOUR_NBINS = 25  # Resolution for density contour plot
 DNA_MATCHER_GENRE_WEIGHT = 0.30  # Genre cosine similarity weight in matcher
 DNA_MATCHER_SLIDER_WEIGHT = 0.70  # Combined weight for 6 slider dimensions
+
+# Platform Quiz
+QUIZ_N_TITLES = 10         # Titles to show in swipe phase
+QUIZ_MAX_PER_PLATFORM = 2  # Platform diversity constraint
+QUIZ_MIN_VOTES = 5000      # Minimum votes for quiz title candidates
 
 # =============================================================================
 # LOGGING

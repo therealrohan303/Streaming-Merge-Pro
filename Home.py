@@ -23,9 +23,11 @@ from src.data.loaders import (
     deduplicate_titles,
     get_credits_for_view,
     get_titles_for_view,
+    load_enriched_titles,
     load_merged_credits,
     load_merged_titles,
 )
+from src.ui.badges import platform_badges_html
 from src.ui.filters import apply_filters, render_sidebar_filters
 from src.ui.session import init_session_state
 
@@ -108,16 +110,24 @@ def _abs_delta(current, baseline):
     diff = current - baseline
     return f"{diff:+.2f} vs Netflix"
 
-c1, c2, c3, c4 = st.columns(4)
+# Check for award data from enrichment
+enriched = load_enriched_titles()
+_award_coverage = enriched["award_wins"].notna().mean() if "award_wins" in enriched.columns else 0
+_has_awards = _award_coverage >= 0.20
 
-with c1:
+if _has_awards:
+    hero_cols = st.columns(5)
+else:
+    hero_cols = st.columns(4)
+
+with hero_cols[0]:
     st.metric(
         "Catalog Size",
         f"{catalog_size:,}",
         delta=_pct_delta(catalog_size, _nf_catalog),
         help="Total unique titles in the current view. Delta shows gain vs Netflix alone.",
     )
-with c2:
+with hero_cols[1]:
     imdb_str = f"{avg_imdb:.2f}" if avg_imdb == avg_imdb else "N/A"
     st.metric(
         "Avg IMDb Score",
@@ -125,20 +135,29 @@ with c2:
         delta=_abs_delta(avg_imdb, _nf_avg_imdb) if avg_imdb == avg_imdb else None,
         help="Mean IMDb rating across all titles (excluding unrated). Delta shows shift vs Netflix alone.",
     )
-with c3:
+with hero_cols[2]:
     st.metric(
         "Cast & Crew",
         f"{people_count:,}",
         delta=_pct_delta(people_count, _nf_people),
         help="Unique actors, directors, and crew across all credits. Delta shows gain vs Netflix alone.",
     )
-with c4:
+with hero_cols[3]:
     st.metric(
         "Genre Coverage",
         f"{genre_count:,}",
         delta=_pct_delta(genre_count, _nf_genres),
         help="Number of distinct genres represented. Delta shows expansion vs Netflix alone.",
     )
+
+if _has_awards:
+    with hero_cols[4]:
+        _award_titles = int((enriched["award_wins"].fillna(0) > 0).sum())
+        st.metric(
+            "Award-Winning Titles",
+            f"{_award_titles:,}",
+            help=f"Titles with at least one award win (Wikidata, {_award_coverage:.0%} coverage)",
+        )
 
 # Insight callout — computed from actual data
 _added_titles = catalog_size - _nf_catalog
@@ -271,18 +290,6 @@ df["quality_score"] = compute_quality_score(df)
 tab_movies, tab_shows = st.tabs(["Top Movies", "Top Shows"])
 
 
-def _platform_badges_html(platforms):
-    """Generate inline HTML badges for a list of platform keys."""
-    badges = []
-    for key in platforms:
-        info = PLATFORMS.get(key, {})
-        name = info.get("name", key.title())
-        color = info.get("color", "#555")
-        badges.append(
-            f'<span style="background:{color};color:#fff;padding:2px 8px;border-radius:4px;'
-            f'font-size:0.75em;font-weight:600;margin-right:3px;">{name}</span>'
-        )
-    return "".join(badges)
 
 
 def _render_title_cards(subset, tab_prefix: str):
@@ -292,36 +299,52 @@ def _render_title_cards(subset, tab_prefix: str):
     if len(top) == 0:
         st.info("No titles match the current filters.")
         return
+
+    # Merge poster URLs from enriched data
+    if "poster_url" not in top.columns and not enriched.empty and "poster_url" in enriched.columns:
+        poster_map = enriched.dropna(subset=["poster_url"]).drop_duplicates("id").set_index("id")["poster_url"].to_dict()
+    else:
+        poster_map = {}
+
     rows = [top.iloc[i : i + 4] for i in range(0, len(top), 4)]
     card_idx = 0
     for row_chunk in rows:
         cols = st.columns(4)
         for col, (_, title) in zip(cols, row_chunk.iterrows()):
-            plat_badges = _platform_badges_html(title["platforms"])
+            plat_badges = platform_badges_html(title["platforms"])
             imdb = title["imdb_score"]
             imdb_str = f"{imdb:.1f}" if imdb == imdb else "N/A"
             votes_str = format_votes(title.get("imdb_votes"))
             qs = title["quality_score"]
 
-            with col:
-                st.markdown(
-                    f"""<div style="background:{CARD_BG};border-radius:10px;padding:14px 12px;
-                    margin-bottom:4px;border:1px solid {CARD_BORDER};
-                    transition:transform 0.15s ease,box-shadow 0.15s ease;"
-                    onmouseover="this.style.transform='translateY(-2px)';this.style.boxShadow='0 4px 12px rgba(0,0,0,0.3)'"
-                    onmouseout="this.style.transform='none';this.style.boxShadow='none'">
-                    <div style="font-size:0.95em;font-weight:700;line-height:1.3;margin-bottom:6px;">
-                    {title['title']}<span style="color:{CARD_TEXT_MUTED};font-weight:400;"> ({int(title['release_year'])})</span></div>
-                    {plat_badges}
-                    <span style="background:{CARD_BORDER};color:#ccc;padding:2px 8px;border-radius:4px;
-                    font-size:0.75em;margin-left:4px;">{title['type']}</span>
-                    <div style="margin-top:8px;font-size:0.85em;color:{CARD_TEXT};">
-                    IMDb {imdb_str} <span style="color:{CARD_TEXT_MUTED};">({votes_str} votes)</span></div>
-                    <div style="margin-top:4px;font-size:0.85em;">
-                    Quality Score: <strong style="color:{CARD_ACCENT};">{qs:.1f}</strong>/10</div>
-                    </div>""",
-                    unsafe_allow_html=True,
+            # Poster thumbnail
+            poster_url = title.get("poster_url") or poster_map.get(title["id"])
+            poster_html = ""
+            if poster_url and str(poster_url) != "nan":
+                poster_html = (
+                    f'<img src="{poster_url}" style="width:100%;border-radius:6px;'
+                    f'margin-bottom:8px;max-height:180px;object-fit:cover;" '
+                    f'onerror="this.style.display=\'none\'" />'
                 )
+
+            with col:
+                _card_html = (
+                    f'<div style="background:{CARD_BG};border-radius:10px;padding:14px 12px;'
+                    f'margin-bottom:4px;border:1px solid {CARD_BORDER};">'
+                    f'{poster_html}'
+                    f'<div style="font-size:0.95em;font-weight:700;line-height:1.3;margin-bottom:6px;">'
+                    f'{title["title"]}'
+                    f'<span style="color:{CARD_TEXT_MUTED};font-weight:400;"> ({int(title["release_year"])})</span></div>'
+                    f'{plat_badges}'
+                    f'<span style="background:{CARD_BORDER};color:#ccc;padding:2px 8px;border-radius:4px;'
+                    f'font-size:0.75em;margin-left:4px;">{title["type"]}</span>'
+                    f'<div style="margin-top:8px;font-size:0.85em;color:{CARD_TEXT};">'
+                    f'IMDb {imdb_str} <span style="color:{CARD_TEXT_MUTED};">({votes_str} votes)</span></div>'
+                    f'<div style="margin-top:4px;font-size:0.85em;">'
+                    f'Quality Score: <strong style="color:{CARD_ACCENT};">{qs:.1f}</strong>/10</div>'
+                    f'</div>'
+                )
+                st.markdown(_card_html, unsafe_allow_html=True)
                 if st.button("View Details", key=f"home_view_{tab_prefix}_{card_idx}", use_container_width=True):
                     st.session_state["explore_selected_id"] = title["id"]
                     st.switch_page("pages/01_Explore_Catalog.py")

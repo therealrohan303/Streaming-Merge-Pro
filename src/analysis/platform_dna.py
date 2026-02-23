@@ -14,6 +14,9 @@ from src.config import (
     MERGED_PLATFORMS,
     PLATFORMS,
     QUALITY_TIERS,
+    QUIZ_MAX_PER_PLATFORM,
+    QUIZ_MIN_VOTES,
+    QUIZ_N_TITLES,
 )
 
 
@@ -454,6 +457,23 @@ def compute_defining_traits(
             "direction": "neutral",
         })
 
+    # --- Trait 7: Awards presence (from enriched data) ---
+    if "award_wins" in platform_df.columns:
+        _aw_coverage = platform_df["award_wins"].notna().mean()
+        if _aw_coverage >= 0.15:
+            _total_wins = platform_df["award_wins"].fillna(0).sum()
+            _n_titles = len(platform_df)
+            _wins_per_1k = (_total_wins / _n_titles * 1000) if _n_titles > 0 else 0
+            if _total_wins > 10 and _wins_per_1k > 50:
+                traits.append({
+                    "label": "Awards Magnet",
+                    "detail": (
+                        f"{int(_total_wins)} award wins across the catalog — "
+                        f"{_wins_per_1k:.0f} per 1,000 titles"
+                    ),
+                    "direction": "high",
+                })
+
     return traits[:max_traits]
 
 
@@ -486,149 +506,67 @@ def compute_platform_comparison_data(
 def compute_landscape_clusters(
     umap_df: pd.DataFrame,
     titles_df: pd.DataFrame,
-    n_clusters: int = 8,
+    n_clusters: int = 10,
 ) -> pd.DataFrame:
-    """Label UMAP points with cluster IDs using KMeans.
+    """Assign titles to content archetypes using genre-priority rules.
+
+    Each title is assigned to the first matching archetype in ``_ARCHETYPES``
+    based on a priority ordering from most specific genres (reality,
+    documentary, horror) to most generic (drama catch-all).  UMAP coordinates
+    are preserved for map visualization only.
 
     Returns merged DataFrame with umap_x, umap_y, cluster, and title metadata.
     """
-    from sklearn.cluster import KMeans
-
-    coords = umap_df[["umap_x", "umap_y"]].values
-    kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-    umap_df = umap_df.copy()
-    umap_df["cluster"] = kmeans.fit_predict(coords)
-
-    # Merge with title metadata
+    # 1. Merge UMAP coords with title metadata
     keep_cols = ["id", "title", "platform", "type", "genres", "imdb_score",
                  "imdb_votes", "tmdb_popularity", "release_year", "age_certification",
                  "runtime", "production_countries"]
     keep_cols = [c for c in keep_cols if c in titles_df.columns]
     meta = titles_df[keep_cols].drop_duplicates(subset="id", keep="first")
-    merged = umap_df.merge(meta, on="id", how="left")
+    merged = umap_df.copy().merge(meta, on="id", how="left")
 
+    # 2. Assign each title to its best-matching archetype
+    fallback_id = _ARCHETYPES[-1]["id"]
+
+    def _assign_archetype(genres_val) -> int:
+        if not isinstance(genres_val, list) or len(genres_val) == 0:
+            return fallback_id
+        genre_set = {str(g).lower() for g in genres_val}
+        for arch in _ARCHETYPES:
+            if genre_set & arch["match"] and not (genre_set & arch["exclude"]):
+                return arch["id"]
+        return fallback_id
+
+    merged["cluster"] = merged["genres"].apply(_assign_archetype)
     return merged
 
 
 _FAMILY_RATINGS = {"G", "PG", "TV-Y", "TV-Y7", "TV-G", "TV-PG"}
 _MATURE_CLUSTER_RATINGS = {"R", "NC-17", "TV-MA", "TV-14"}
 
+# Content archetypes for deterministic genre-priority assignment.
+# Ordered from most specific genres → most generic (catch-all).
+# Each title is assigned to the FIRST archetype whose genre rule matches.
+_ARCHETYPES = [
+    {"id": 0, "name": "Reality & Lifestyle",       "match": {"reality"},                                           "exclude": set()},
+    {"id": 1, "name": "Documentaries & Factual",   "match": {"documentation"},                                     "exclude": set()},
+    {"id": 2, "name": "Horror & Supernatural",     "match": {"horror"},                                            "exclude": set()},
+    {"id": 3, "name": "Animation & Family",        "match": {"animation"},                                         "exclude": set()},
+    {"id": 4, "name": "Sci-Fi & Fantasy",          "match": {"scifi", "fantasy"},                                  "exclude": set()},
+    {"id": 5, "name": "Crime & Thriller",          "match": {"crime", "thriller"},                                 "exclude": {"horror"}},
+    {"id": 6, "name": "Action & Epic Adventures",   "match": {"action", "western", "war", "sport"},                 "exclude": set()},
+    {"id": 7, "name": "Comedy & Feel-Good",        "match": {"comedy"},                                            "exclude": set()},
+    {"id": 8, "name": "Romance & Relationships",   "match": {"romance"},                                           "exclude": set()},
+    {"id": 9, "name": "Prestige Drama",            "match": {"drama", "history", "music", "european", "family"},   "exclude": set()},
+]
 
-def generate_cluster_name(
-    top_genres: list[str],
-    avg_year: float | None,
-    avg_imdb: float | None,
-    movie_pct: float = 50.0,
-    dominant_platform: str | None = None,
-    used_names: set | None = None,
-    cluster_df: pd.DataFrame | None = None,
-) -> str:
-    """Generate a unique, thematic name for a content cluster.
 
-    Uses rule-based archetype matching on genre, quality, audience,
-    and geography signals. Each name is human-readable and instantly
-    descriptive of the cluster's character.
-    """
-    if not top_genres:
-        return "Mixed Collection"
-
-    _used = used_names or set()
-
-    # Compute cluster signals from the DataFrame
-    intl_pct = 0.0
-    family_pct = 0.0
-    mature_pct = 0.0
-    median_votes = 0.0
-    if cluster_df is not None and len(cluster_df) > 0:
-        # International %
-        valid_c = cluster_df[cluster_df["production_countries"].apply(
-            lambda c: isinstance(c, list) and len(c) > 0
-        )] if "production_countries" in cluster_df.columns else pd.DataFrame()
-        if len(valid_c) > 0:
-            intl_pct = valid_c["production_countries"].apply(
-                lambda c: "US" not in c
-            ).mean() * 100
-
-        # Audience certification breakdown
-        certs = cluster_df["age_certification"].dropna() if "age_certification" in cluster_df.columns else pd.Series(dtype=str)
-        if len(certs) > 0:
-            family_pct = certs.isin(_FAMILY_RATINGS).mean() * 100
-            mature_pct = certs.isin(_MATURE_CLUSTER_RATINGS).mean() * 100
-
-        # Median vote count (popularity proxy)
-        if "imdb_votes" in cluster_df.columns:
-            votes = cluster_df["imdb_votes"].dropna()
-            median_votes = float(votes.median()) if len(votes) > 0 else 0.0
-
-    # Lowercase genre set for matching (top_genres are already title-cased)
-    g_lower = {g.lower() for g in top_genres[:3]}
-    g_top2 = {g.lower() for g in top_genres[:2]}
-
-    # ---- Ordered archetype rules (first match wins) ----
-    candidate = None
-
-    if "animation" in g_top2 or family_pct > 60:
-        candidate = "Kids & Animation Hub"
-    elif "documentary" in g_lower or "documentation" in g_lower:
-        candidate = "Documentary & Factual Hub"
-    elif ("crime" in g_top2 or "thriller" in g_top2) and mature_pct > 40:
-        candidate = "Dark Thriller Hub"
-    elif "drama" in g_top2 and avg_imdb is not None and avg_imdb >= 7.0:
-        candidate = "Prestige Drama Hub"
-    elif "comedy" in g_top2 and family_pct > 35:
-        candidate = "Family Comedy Hub"
-    elif "scifi" in g_lower or "fantasy" in g_lower:
-        candidate = "Sci-Fi & Fantasy Hub"
-    elif "horror" in g_top2:
-        candidate = "Horror & Supernatural Hub"
-    elif intl_pct > 55:
-        candidate = "International Cinema Hub"
-    elif "action" in g_top2:
-        candidate = "Action & Adventure Hub"
-    elif "romance" in g_top2 and "drama" in g_top2:
-        candidate = "Romantic Drama Hub"
-    elif "reality" in g_lower:
-        candidate = "Reality & Lifestyle Hub"
-    elif (avg_imdb is not None and avg_imdb >= 6.5
-          and median_votes < 5000 and movie_pct > 55):
-        candidate = "Indie & Art House Hub"
-    elif avg_year is not None and avg_year < 2005 and movie_pct > 55:
-        candidate = "Classic Cinema Hub"
-    elif median_votes > 20000:
-        candidate = "Mainstream Hits Hub"
-    else:
-        # Fallback: use top genre
-        candidate = f"{top_genres[0]} & {top_genres[1]} Hub" if len(top_genres) >= 2 else f"{top_genres[0]} Hub"
-
-    # ---- Deduplication ----
-    if candidate not in _used:
-        _used.add(candidate)
-        return candidate
-
-    # Append a differentiator
-    differentiators = []
-    if intl_pct > 40:
-        differentiators.append("International")
-    if movie_pct < 40:
-        differentiators.append("Series")
-    elif movie_pct > 65:
-        differentiators.append("Cinema")
-    if avg_year is not None and avg_year < 2010:
-        differentiators.append("Classics")
-    if avg_imdb is not None and avg_imdb >= 7.0:
-        differentiators.append("Premium")
-    differentiators.append(f"Region {len(_used) + 1}")
-
-    for diff in differentiators:
-        name = f"{candidate.replace(' Hub', '')} Hub ({diff})"
-        if name not in _used:
-            _used.add(name)
-            return name
-
-    # Absolute fallback
-    fallback = f"{candidate} #{len(_used) + 1}"
-    _used.add(fallback)
-    return fallback
+def generate_cluster_name(cluster_id: int, **kwargs) -> str:
+    """Return the predefined archetype name for a given cluster ID."""
+    for arch in _ARCHETYPES:
+        if arch["id"] == cluster_id:
+            return arch["name"]
+    return "Mixed Collection"
 
 
 def compute_cluster_summaries(landscape_df: pd.DataFrame) -> dict:
@@ -638,30 +576,35 @@ def compute_cluster_summaries(landscape_df: pd.DataFrame) -> dict:
         'name': str, 'top_genres': list[str], 'platform_mix': dict[str, int],
         'avg_imdb': float, 'size': int, 'sample_titles': list[str],
         'platform_leader': str | None, 'quality_leader': str | None,
+        'archetype_genres': set[str],
     }
     """
-    used_names: set[str] = set()
     summaries = {}
+
+    # Build archetype lookup for genre-relevance scoring
+    arch_lookup = {a["id"]: a for a in _ARCHETYPES}
+
     for cluster_id, grp in landscape_df.groupby("cluster"):
-        # Top genres
-        genre_counts = {}
+        arch = arch_lookup.get(cluster_id, _ARCHETYPES[-1])
+        arch_genre_set = arch["match"]
+
+        # Top genres — only include genres with ≥5% share of cluster
+        genre_counts: dict[str, int] = {}
+        titles_with_genres = 0
         for genres in grp["genres"].dropna():
-            if isinstance(genres, list):
+            if isinstance(genres, list) and len(genres) > 0:
+                titles_with_genres += 1
                 for g in genres:
                     genre_counts[g] = genre_counts.get(g, 0) + 1
-        top_genres_raw = sorted(genre_counts, key=genre_counts.get, reverse=True)[:4]
+        min_share = max(1, titles_with_genres * 0.05)
+        significant = {g: c for g, c in genre_counts.items() if c >= min_share}
+        if not significant:
+            significant = genre_counts
+        top_genres_raw = sorted(significant, key=significant.get, reverse=True)[:4]
         top_genres = [_genre_label(g) for g in top_genres_raw]
 
         # Platform mix
         platform_mix = grp["platform"].value_counts().to_dict() if "platform" in grp.columns else {}
-
-        # Dominant platform (for naming)
-        dominant_platform = None
-        if platform_mix:
-            top_plat = max(platform_mix, key=platform_mix.get)
-            top_plat_pct = platform_mix[top_plat] / len(grp) * 100
-            if top_plat_pct > 40:
-                dominant_platform = top_plat
 
         # Platform leader (most titles in cluster, shown if >30%)
         platform_leader = None
@@ -687,30 +630,37 @@ def compute_cluster_summaries(landscape_df: pd.DataFrame) -> dict:
         # Avg year
         avg_year = float(grp["release_year"].mean()) if "release_year" in grp.columns else None
 
-        # Content type mix
-        movie_pct = (grp["type"] == "Movie").mean() * 100 if "type" in grp.columns else 50.0
-
-        # Sample titles — ranked by quality_score with progressive vote thresholds
+        # Sample titles — ranked by quality + cluster genre relevance
+        # Use actual top genres in this cluster (not just archetype triggers)
+        # so titles like Breaking Bad (crime, drama, thriller) get full credit
+        cluster_top_set = {g.lower() for g in top_genres_raw[:4]}
         if len(rated) > 0:
             scored = rated.copy()
             scored["quality_score"] = compute_quality_score(scored)
+
+            def _genre_relevance(genres_val):
+                if not isinstance(genres_val, list):
+                    return 0.0
+                matches = sum(1 for g in genres_val if str(g).lower() in cluster_top_set)
+                return matches / max(len(genres_val), 1)
+
+            scored["genre_rel"] = scored["genres"].apply(_genre_relevance)
+            scored["final_score"] = (
+                scored["quality_score"] * 0.7
+                + scored["genre_rel"] * 0.3 * 100
+            )
+
             for threshold in [10_000, 1_000, 0]:
                 pool = scored[scored["imdb_votes"].fillna(0) >= threshold]
                 if len(pool) >= 5:
                     break
             else:
                 pool = scored
-            sample = pool.nlargest(5, "quality_score")["title"].tolist()
+            sample = pool.nlargest(5, "final_score")["title"].tolist()
         else:
             sample = []
 
-        name = generate_cluster_name(
-            top_genres, avg_year, avg_imdb,
-            movie_pct=movie_pct,
-            dominant_platform=dominant_platform,
-            used_names=used_names,
-            cluster_df=grp,
-        )
+        name = generate_cluster_name(cluster_id)
 
         summaries[cluster_id] = {
             "name": name,
@@ -722,6 +672,8 @@ def compute_cluster_summaries(landscape_df: pd.DataFrame) -> dict:
             "sample_titles": sample,
             "platform_leader": platform_leader,
             "quality_leader": quality_leader,
+            "archetype_genres": arch_genre_set,
+            "cluster_top_genres": cluster_top_set,
         }
 
     return summaries
@@ -1054,3 +1006,301 @@ def compute_user_match_scores(
 
     results.sort(key=lambda x: x["match_pct"], reverse=True)
     return results
+
+
+# =============================================================================
+# PLATFORM QUIZ — Hybrid Genre Selector + Title Swipe
+# =============================================================================
+
+_DARK_GENRES = {"horror", "thriller", "crime"}
+_LIGHT_GENRES = {"horror", "thriller"}  # excluded in feel-good mode
+
+
+def curate_quiz_titles(
+    all_df: pd.DataFrame,
+    selected_genres: list[str],
+    quality_pref: str = "No Preference",
+    type_pref: str = "Both",
+    vibe_pref: str = "Mix of Both",
+) -> list[dict]:
+    """Curate diverse title cards for the swipe phase of the quiz.
+
+    Returns list of dicts: {id, title, platform, type, genres, imdb_score,
+    release_year, description, imdb_votes}.
+    """
+    from src.data.loaders import deduplicate_titles
+
+    pool = all_df.copy()
+
+    # Filter to titles with at least one selected genre
+    if selected_genres:
+        genre_set = {g.lower() for g in selected_genres}
+        pool = pool[pool["genres"].apply(
+            lambda gs: isinstance(gs, list) and bool({str(g).lower() for g in gs} & genre_set)
+        )]
+
+    # Quality filter
+    if quality_pref == "Award Winners":
+        pool = pool[pool["imdb_score"].fillna(0) >= 7.5]
+    elif quality_pref == "Crowd Favorites":
+        pool = pool[pool["imdb_votes"].fillna(0) >= 10_000]
+
+    # Type filter
+    if type_pref == "Movies":
+        pool = pool[pool["type"] == "Movie"]
+    elif type_pref == "Shows":
+        pool = pool[pool["type"] == "Show"]
+
+    # Vibe filter
+    if vibe_pref == "Feel-Good & Light":
+        pool = pool[pool["genres"].apply(
+            lambda gs: isinstance(gs, list) and not bool({str(g).lower() for g in gs} & _LIGHT_GENRES)
+        )]
+    elif vibe_pref == "Dark & Intense":
+        pool = pool[pool["genres"].apply(
+            lambda gs: isinstance(gs, list) and bool({str(g).lower() for g in gs} & _DARK_GENRES)
+        )]
+
+    # Require minimum votes for recognizable titles
+    pool = pool[pool["imdb_votes"].fillna(0) >= QUIZ_MIN_VOTES]
+
+    if len(pool) < QUIZ_N_TITLES:
+        # Relax vote threshold if not enough titles
+        pool = all_df.copy()
+        if selected_genres:
+            genre_set = {g.lower() for g in selected_genres}
+            pool = pool[pool["genres"].apply(
+                lambda gs: isinstance(gs, list) and bool({str(g).lower() for g in gs} & genre_set)
+            )]
+        pool = pool[pool["imdb_votes"].fillna(0) >= 1000]
+
+    # Deduplicate (multi-platform titles appear once)
+    pool = deduplicate_titles(pool)
+
+    # Sort by quality score for strong candidates
+    pool = pool.copy()
+    pool["_qs"] = compute_quality_score(pool)
+
+    # Sample ensuring platform diversity + genre coverage
+    selected: list[pd.Series] = []
+    plat_counts: dict[str, int] = {}
+    seen_ids: set = set()
+
+    # Shuffle with quality bias: take from top quality first
+    ranked = pool.nlargest(min(200, len(pool)), "_qs")
+
+    for _, row in ranked.iterrows():
+        if len(selected) >= QUIZ_N_TITLES:
+            break
+        rid = row.get("id")
+        if rid in seen_ids:
+            continue
+
+        # Platform diversity: check across all platforms this title is on
+        platforms = row.get("platforms", [row.get("platform", "")])
+        if isinstance(platforms, str):
+            platforms = [platforms]
+        if any(plat_counts.get(p, 0) >= QUIZ_MAX_PER_PLATFORM for p in platforms):
+            continue
+
+        selected.append(row)
+        seen_ids.add(rid)
+        for p in platforms:
+            plat_counts[p] = plat_counts.get(p, 0) + 1
+
+    # If not enough, fill from remaining without platform constraint
+    if len(selected) < QUIZ_N_TITLES:
+        for _, row in ranked.iterrows():
+            if len(selected) >= QUIZ_N_TITLES:
+                break
+            rid = row.get("id")
+            if rid not in seen_ids:
+                selected.append(row)
+                seen_ids.add(rid)
+
+    # Build output dicts
+    result = []
+    for row in selected:
+        platforms = row.get("platforms", [row.get("platform", "")])
+        if isinstance(platforms, str):
+            platforms = [platforms]
+        desc = row.get("description", "")
+        if isinstance(desc, str) and len(desc) > 200:
+            desc = desc[:197] + "..."
+        result.append({
+            "id": row.get("id"),
+            "title": row.get("title", "Unknown"),
+            "platform": platforms[0] if platforms else "",
+            "platforms": platforms,
+            "type": row.get("type", ""),
+            "genres": row.get("genres", []),
+            "imdb_score": row.get("imdb_score"),
+            "release_year": row.get("release_year"),
+            "description": desc,
+        })
+    return result
+
+
+def compute_swipe_results(
+    liked_ids: list,
+    all_titles: list[dict],
+    all_df: pd.DataFrame,
+) -> dict:
+    """Analyze liked titles to compute platform match scores and recommendations.
+
+    Args:
+        liked_ids: IDs of titles the user liked
+        all_titles: full list of quiz title dicts (for reference)
+        all_df: full all_platforms_titles DataFrame
+
+    Returns:
+        {
+            'rankings': [{platform, display_name, match_pct, explanation}, ...],
+            'personality': str,
+            'recommendations': [{title, platform, imdb_score, ...}, ...],
+        }
+    """
+    # Build liked title data
+    liked_data = [t for t in all_titles if t.get("id") in set(liked_ids)]
+    if not liked_data:
+        return {
+            "rankings": [
+                {"platform": k, "display_name": PLATFORMS[k]["name"],
+                 "match_pct": 50.0, "explanation": "Like some titles to get personalized results."}
+                for k in ALL_PLATFORMS
+            ],
+            "personality": "Undecided viewer",
+            "recommendations": [],
+        }
+
+    # 1. Genre affinity from liked titles
+    genre_counts: dict[str, int] = {}
+    for t in liked_data:
+        for g in (t.get("genres") or []):
+            gl = str(g).lower()
+            genre_counts[gl] = genre_counts.get(gl, 0) + 1
+    total_genre_mentions = sum(genre_counts.values()) or 1
+    user_genre_dist = {g: c / total_genre_mentions for g, c in genre_counts.items()}
+    top_user_genres = sorted(genre_counts, key=genre_counts.get, reverse=True)[:3]
+
+    # 2. Platform affinity from liked titles
+    plat_like_counts: dict[str, int] = {}
+    for t in liked_data:
+        for p in (t.get("platforms") or [t.get("platform", "")]):
+            plat_like_counts[p] = plat_like_counts.get(p, 0) + 1
+
+    # 3. Quality preference
+    liked_scores = [t["imdb_score"] for t in liked_data if t.get("imdb_score")]
+    user_avg_quality = sum(liked_scores) / len(liked_scores) if liked_scores else 6.5
+
+    # 4. Score each platform
+    rankings = []
+    for key in ALL_PLATFORMS:
+        plat_df = all_df[all_df["platform"] == key]
+        if plat_df.empty:
+            continue
+
+        # Genre affinity: cosine-like overlap between user genre dist and platform genre dist
+        plat_genre_counts: dict[str, int] = {}
+        plat_n = 0
+        for gs in plat_df["genres"].dropna():
+            if isinstance(gs, list) and gs:
+                plat_n += 1
+                for g in gs:
+                    plat_genre_counts[str(g).lower()] = plat_genre_counts.get(str(g).lower(), 0) + 1
+        plat_genre_dist = {g: c / plat_n for g, c in plat_genre_counts.items()} if plat_n else {}
+
+        # Dot product / (norm_user * norm_plat)
+        all_genres_union = set(user_genre_dist) | set(plat_genre_dist)
+        dot = sum(user_genre_dist.get(g, 0) * plat_genre_dist.get(g, 0) for g in all_genres_union)
+        norm_u = sum(v**2 for v in user_genre_dist.values()) ** 0.5
+        norm_p = sum(v**2 for v in plat_genre_dist.values()) ** 0.5
+        genre_score = (dot / (norm_u * norm_p) * 100) if norm_u and norm_p else 50
+
+        # Platform affinity: direct like count
+        like_score = plat_like_counts.get(key, 0) / max(len(liked_data), 1) * 100
+
+        # Quality alignment
+        plat_avg = plat_df["imdb_score"].dropna().mean() if plat_df["imdb_score"].notna().any() else 6.5
+        quality_score = max(0, 100 - abs(user_avg_quality - plat_avg) * 20)
+
+        # Combined: 40% genre + 30% platform affinity + 30% quality
+        total = 0.40 * genre_score + 0.30 * like_score + 0.30 * quality_score
+
+        # Explanation
+        parts = []
+        if genre_score >= 70:
+            parts.append("strong genre alignment")
+        elif genre_score >= 50:
+            parts.append("moderate genre overlap")
+        else:
+            parts.append("different genre focus")
+        if like_score >= 40:
+            parts.append("you liked their titles")
+        if quality_score >= 70:
+            parts.append("matches your quality taste")
+
+        rankings.append({
+            "platform": key,
+            "display_name": PLATFORMS.get(key, {}).get("name", key.title()),
+            "match_pct": round(total, 1),
+            "explanation": ". ".join(parts).capitalize() + "." if parts else "Moderate match.",
+        })
+
+    rankings.sort(key=lambda x: x["match_pct"], reverse=True)
+
+    # 5. Personality summary
+    persona_parts = []
+    if top_user_genres:
+        genre_labels = [_genre_label(g) for g in top_user_genres[:3]]
+        persona_parts.append(f"loves {', '.join(genre_labels)}")
+    if user_avg_quality >= 7.5:
+        persona_parts.append("seeks premium quality")
+    elif user_avg_quality < 6.0:
+        persona_parts.append("enjoys casual entertainment")
+    personality = "You're a viewer who " + " and ".join(persona_parts) + "." if persona_parts else ""
+
+    # 6. Recommendations from best-match platform
+    recs = []
+    if rankings:
+        best_key = rankings[0]["platform"]
+        best_df = all_df[all_df["platform"] == best_key].copy()
+
+        # Filter to titles matching user's top genres
+        if top_user_genres:
+            user_genre_set = set(top_user_genres)
+            best_df = best_df[best_df["genres"].apply(
+                lambda gs: isinstance(gs, list) and bool({str(g).lower() for g in gs} & user_genre_set)
+            )]
+
+        # Exclude titles already seen in quiz
+        seen_ids = {t["id"] for t in all_titles}
+        best_df = best_df[~best_df["id"].isin(seen_ids)]
+
+        # Top quality titles
+        if len(best_df) > 0:
+            best_df = best_df.copy()
+            best_df["_qs"] = compute_quality_score(best_df)
+            for threshold in [10_000, 1_000, 0]:
+                _pool = best_df[best_df["imdb_votes"].fillna(0) >= threshold]
+                if len(_pool) >= 5:
+                    break
+            else:
+                _pool = best_df
+            top_recs = _pool.nlargest(5, "_qs")
+            for _, r in top_recs.iterrows():
+                recs.append({
+                    "id": r.get("id"),
+                    "title": r.get("title", ""),
+                    "platform": best_key,
+                    "imdb_score": r.get("imdb_score"),
+                    "release_year": r.get("release_year"),
+                    "type": r.get("type", ""),
+                    "genres": r.get("genres", []),
+                })
+
+    return {
+        "rankings": rankings,
+        "personality": personality,
+        "recommendations": recs,
+    }

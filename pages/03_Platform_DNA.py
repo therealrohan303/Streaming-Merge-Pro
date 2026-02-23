@@ -10,7 +10,8 @@ from src.analysis.platform_dna import (
     compute_landscape_clusters,
     compute_landscape_insights,
     compute_platform_comparison_data,
-    compute_user_match_scores,
+    compute_swipe_results,
+    curate_quiz_titles,
 )
 from src.config import (
     ALL_PLATFORMS,
@@ -28,7 +29,7 @@ from src.config import (
     PLATFORMS,
     PLOTLY_TEMPLATE,
 )
-from src.data.loaders import load_all_platforms_titles, load_umap_coords
+from src.data.loaders import load_all_platforms_titles, load_enriched_titles, load_umap_coords
 from src.ui.filters import apply_filters, render_sidebar_filters
 from src.ui.session import init_session_state
 
@@ -408,8 +409,8 @@ if umap_coords is not None:
                     unsafe_allow_html=True,
                 )
 
-            # Controls row: platform highlight + title search + neighborhood
-            ctrl_l, ctrl_m, ctrl_r = st.columns([3, 2, 2])
+            # Controls row: platform highlight + title search
+            ctrl_l, ctrl_m = st.columns([3, 2])
             available_platforms = sorted(landscape["platform"].unique().tolist())
             neighborhood_names = {cid: s["name"] for cid, s in cluster_summaries.items()}
 
@@ -432,13 +433,8 @@ if umap_coords is not None:
                     help="Find where a title sits in the content landscape",
                 )
 
-            with ctrl_r:
-                selected_neighborhood = st.selectbox(
-                    "Explore a neighborhood",
-                    options=["None"] + list(neighborhood_names.values()),
-                    index=0,
-                    help="Select a neighborhood to see details and highlight it on the map",
-                )
+            # Read neighborhood selection from session state (selectbox rendered below map)
+            selected_neighborhood = st.session_state.get("dna_sel_neighborhood", "None")
 
             # Find selected cluster ID
             sel_cid = None
@@ -448,37 +444,50 @@ if umap_coords is not None:
                         sel_cid = cid
                         break
 
-            # Build density contour figure
+            # Build content landscape figure — archetype-colored scatter
             fig_landscape = go.Figure()
 
-            # Per-platform density contours
-            for plat_key in available_platforms:
-                plat_data = landscape[landscape["platform"] == plat_key]
-                if len(plat_data) < 10:
-                    continue
-                p_color = PLATFORMS.get(plat_key, {}).get("color", "#888")
-                p_name = PLATFORMS.get(plat_key, {}).get("name", plat_key)
+            # Archetype color palette (distinct, readable on dark theme)
+            _ARCH_COLORS = {
+                0: "#FF6B6B",  # Reality — coral
+                1: "#4ECDC4",  # Documentary — teal
+                2: "#9B59B6",  # Horror — purple
+                3: "#F39C12",  # Animation — orange
+                4: "#3498DB",  # Sci-Fi — blue
+                5: "#E74C3C",  # Crime — red
+                6: "#2ECC71",  # Action — green
+                7: "#F1C40F",  # Comedy — yellow
+                8: "#E91E63",  # Romance — pink
+                9: "#95A5A6",  # Drama — silver
+            }
+
+            # Base layer: sampled scatter per archetype
+            _max_per_arch = 800
+            for cid, summary in cluster_summaries.items():
+                arch_data = landscape[landscape["cluster"] == cid]
+                if len(arch_data) > _max_per_arch:
+                    arch_data = arch_data.sample(n=_max_per_arch, random_state=42)
+                a_color = _ARCH_COLORS.get(cid, "#888")
 
                 fig_landscape.add_trace(
-                    go.Histogram2dContour(
-                        x=plat_data["umap_x"],
-                        y=plat_data["umap_y"],
-                        name=p_name,
-                        colorscale=[
-                            [0, "rgba(0,0,0,0)"],
-                            [0.3, _hex_to_rgba(p_color, 0.2)],
-                            [1, _hex_to_rgba(p_color, 0.67)],
-                        ],
-                        contours=dict(coloring="fill", showlabels=False),
-                        ncontours=20,
-                        showscale=False,
-                        opacity=0.45,
-                        hoverinfo="skip",
-                        line=dict(width=0.5, color=_hex_to_rgba(p_color, 0.4)),
+                    go.Scatter(
+                        x=arch_data["umap_x"],
+                        y=arch_data["umap_y"],
+                        mode="markers",
+                        name=summary["name"],
+                        marker=dict(size=4, color=a_color, opacity=0.45),
+                        text=arch_data["title"],
+                        hovertemplate=(
+                            "<b>%{text}</b><br>"
+                            + summary["name"]
+                            + "<br>IMDb: %{customdata[0]:.1f}"
+                            + "<br>Year: %{customdata[1]}<extra></extra>"
+                        ),
+                        customdata=arch_data[["imdb_score", "release_year"]].fillna(0).values,
                     )
                 )
 
-            # Overlay sampled points for highlighted platforms
+            # Overlay highlighted platforms with larger markers
             for plat_key in highlight_keys:
                 plat_data = landscape[landscape["platform"] == plat_key]
                 if len(plat_data) > DNA_UMAP_SAMPLE_SIZE:
@@ -495,9 +504,9 @@ if umap_coords is not None:
                         mode="markers",
                         name=f"{p_name} titles",
                         marker=dict(
-                            size=5,
+                            size=6,
                             color=p_color,
-                            opacity=0.7,
+                            opacity=0.8,
                             line=dict(width=0.5, color="#fff"),
                         ),
                         text=plat_data["title"],
@@ -507,7 +516,7 @@ if umap_coords is not None:
                             "IMDb: %{customdata[0]:.2f}<br>"
                             "Year: %{customdata[1]}<extra></extra>"
                         ),
-                        customdata=plat_data[["imdb_score", "release_year"]].values,
+                        customdata=plat_data[["imdb_score", "release_year"]].fillna(0).values,
                     )
                 )
 
@@ -521,9 +530,9 @@ if umap_coords is not None:
                         mode="markers",
                         name=f"{selected_neighborhood}",
                         marker=dict(
-                            size=6,
-                            color="rgba(255,215,0,0.4)",
-                            line=dict(width=1, color="#FFD700"),
+                            size=7,
+                            color="rgba(255,215,0,0.5)",
+                            line=dict(width=1.5, color="#FFD700"),
                         ),
                         text=hood_data["title"] if "title" in hood_data.columns else None,
                         hovertemplate=(
@@ -531,7 +540,7 @@ if umap_coords is not None:
                             "IMDb: %{customdata[0]:.2f}<br>"
                             "Year: %{customdata[1]}<extra></extra>"
                         ) if "title" in hood_data.columns else None,
-                        customdata=hood_data[["imdb_score", "release_year"]].values if {"imdb_score", "release_year"}.issubset(hood_data.columns) else None,
+                        customdata=hood_data[["imdb_score", "release_year"]].fillna(0).values if {"imdb_score", "release_year"}.issubset(hood_data.columns) else None,
                     )
                 )
 
@@ -562,25 +571,9 @@ if umap_coords is not None:
                                 "IMDb: %{customdata[0]:.2f}<br>"
                                 "Year: %{customdata[1]}<extra></extra>"
                             ),
-                            customdata=search_matches[["imdb_score", "release_year"]].values,
+                            customdata=search_matches[["imdb_score", "release_year"]].fillna(0).values,
                         )
                     )
-
-            # Cluster center annotations
-            for cid, summary in cluster_summaries.items():
-                center_x = landscape[landscape["cluster"] == cid]["umap_x"].mean()
-                center_y = landscape[landscape["cluster"] == cid]["umap_y"].mean()
-                fig_landscape.add_annotation(
-                    x=center_x,
-                    y=center_y,
-                    text=summary["name"],
-                    showarrow=False,
-                    font=dict(size=10, color="#FAFAFA", family="Arial"),
-                    bgcolor="rgba(30,30,46,0.75)",
-                    borderpad=3,
-                    bordercolor="rgba(255,255,255,0.15)",
-                    borderwidth=1,
-                )
 
             fig_landscape.update_layout(
                 xaxis=dict(
@@ -590,22 +583,42 @@ if umap_coords is not None:
                     showticklabels=False, showgrid=False, zeroline=False, title=""
                 ),
                 template=PLOTLY_TEMPLATE,
-                height=CHART_HEIGHT + 180,
+                height=CHART_HEIGHT + 200,
                 margin=dict(l=10, r=10, t=40, b=10),
                 legend=dict(
-                    title="",
+                    title="Content Categories",
                     orientation="h",
                     yanchor="bottom",
                     y=1.02,
                     xanchor="center",
                     x=0.5,
-                    font=dict(size=11),
+                    font=dict(size=10),
                 ),
                 paper_bgcolor="rgba(0,0,0,0)",
                 plot_bgcolor="rgba(0,0,0,0)",
             )
 
             st.plotly_chart(fig_landscape, use_container_width=True)
+
+            st.caption(
+                "Dot positions reflect content similarity (based on descriptions). "
+                "Colors show genre-based content categories. "
+                "Titles in the same category may appear in different map regions "
+                "due to diverse descriptions."
+            )
+
+            # Neighborhood selector below the map
+            st.selectbox(
+                "Explore a neighborhood",
+                options=["None"] + list(neighborhood_names.values()),
+                index=(
+                    (["None"] + list(neighborhood_names.values())).index(selected_neighborhood)
+                    if selected_neighborhood in (["None"] + list(neighborhood_names.values()))
+                    else 0
+                ),
+                key="dna_sel_neighborhood",
+                help="Select a neighborhood to see details and highlight it on the map",
+            )
 
             # Search results info below the map
             if title_search and len(title_search) >= 2:
@@ -650,6 +663,41 @@ if umap_coords is not None:
                         f"{g}</span>"
                     )
                 st.markdown(genre_pills_html, unsafe_allow_html=True)
+
+                # Dominant franchise from enrichment data (if ≥3 titles in cluster)
+                _enr_dna = load_enriched_titles()
+                if not _enr_dna.empty and "collection_name" in _enr_dna.columns:
+                    _cluster_ids = set(sel_data["id"])
+                    _cluster_enr = _enr_dna[
+                        _enr_dna["id"].isin(_cluster_ids) &
+                        _enr_dna["collection_name"].notna()
+                    ]
+                    if not _cluster_enr.empty:
+                        _franchise_counts = _cluster_enr["collection_name"].value_counts()
+                        _top_franchise = _franchise_counts.index[0]
+                        _top_count = _franchise_counts.iloc[0]
+                        if _top_count >= 3:
+                            st.markdown(
+                                f'<div style="color:{CARD_TEXT_MUTED};font-size:0.85em;margin:4px 0;">'
+                                f'Dominant Franchise: <span style="color:{CARD_ACCENT};font-weight:600;">'
+                                f'{_top_franchise}</span> ({_top_count} titles)</div>',
+                                unsafe_allow_html=True,
+                            )
+
+                # Awards-based trait from enrichment data
+                if not _enr_dna.empty and "award_wins" in _enr_dna.columns:
+                    _cluster_enr_awards = _enr_dna[_enr_dna["id"].isin(_cluster_ids)]
+                    _total_wins = _cluster_enr_awards["award_wins"].fillna(0).sum()
+                    _n_titles = len(_cluster_enr_awards)
+                    _wins_per_1k = (_total_wins / _n_titles * 1000) if _n_titles > 0 else 0
+                    _award_coverage = _cluster_enr_awards["award_wins"].notna().mean()
+                    if _award_coverage >= 0.15 and _total_wins > 5:
+                        st.markdown(
+                            f'<div style="color:{CARD_TEXT_MUTED};font-size:0.85em;margin:4px 0;">'
+                            f'Awards Magnet: <span style="color:#FFD700;font-weight:600;">'
+                            f'{int(_total_wins)} wins</span>, {_wins_per_1k:.0f} per 1,000 titles</div>',
+                            unsafe_allow_html=True,
+                        )
 
                 # Leaders line
                 pl = sel_summary.get("platform_leader")
@@ -737,13 +785,29 @@ if umap_coords is not None:
                 if len(rated_cluster) > 0:
                     from src.analysis.scoring import compute_quality_score as _qs
                     rated_cluster["quality_score"] = _qs(rated_cluster)
+
+                    # Genre-relevance boost using cluster's actual top genres
+                    _top_genres = sel_summary.get("cluster_top_genres", set())
+
+                    def _gr(gv):
+                        if not isinstance(gv, list):
+                            return 0.0
+                        m = sum(1 for g in gv if str(g).lower() in _top_genres)
+                        return m / max(len(gv), 1)
+
+                    rated_cluster["genre_rel"] = rated_cluster["genres"].apply(_gr)
+                    rated_cluster["final_score"] = (
+                        rated_cluster["quality_score"] * 0.7
+                        + rated_cluster["genre_rel"] * 0.3 * 100
+                    )
+
                     for threshold in [10_000, 1_000, 0]:
                         pool = rated_cluster[rated_cluster["imdb_votes"].fillna(0) >= threshold]
                         if len(pool) >= 10:
                             break
                     else:
                         pool = rated_cluster
-                    top_titles = pool.nlargest(10, "quality_score")
+                    top_titles = pool.nlargest(10, "final_score")
                     t_cols = st.columns(2)
                     for idx, (_, row) in enumerate(top_titles.iterrows()):
                         with t_cols[idx % 2]:
@@ -764,128 +828,301 @@ if umap_coords is not None:
                                     )
                             st.markdown(
                                 f'<div style="background:{CARD_BG};border-left:3px solid {p_color};'
-                                f'border-radius:6px;padding:10px 14px;margin-bottom:6px;">'
+                                f'border-radius:6px;padding:10px 14px;margin-bottom:2px;">'
                                 f'<span style="color:{CARD_TEXT};font-weight:600;">{row["title"]}</span>'
                                 f'<br/><span style="color:{CARD_TEXT_MUTED};font-size:0.82em;">'
                                 f'{p_name} · {year_str} · IMDb {imdb_str} · {row.get("type", "")}</span>'
                                 f'<br/>{title_genres}</div>',
                                 unsafe_allow_html=True,
                             )
+                            title_id = row.get("id")
+                            if title_id is not None and st.button(
+                                "View Details",
+                                key=f"hub_detail_{title_id}_{idx}",
+                                use_container_width=True,
+                            ):
+                                st.session_state["explore_selected_id"] = title_id
+                                st.switch_page("pages/01_Explore_Catalog.py")
                 else:
                     st.caption("No rated titles in this neighborhood.")
 
 
 # ==============================================================================
-# SECTION 3: WHAT PLATFORM ARE YOU?
+# SECTION 3: WHAT PLATFORM ARE YOU? — Hybrid Quiz
 # ==============================================================================
 
 st.markdown("---")
 st.subheader("What Platform Are You?")
 st.caption(
-    "Tell us your preferences and we'll find the streaming platform "
-    "that best matches your taste."
+    "Pick your favorite genres, swipe through title cards, "
+    "and discover which streaming platform is your perfect match."
 )
 
-# Collect all genres for the multiselect
+# Session state for quiz flow
+st.session_state.setdefault("dna_quiz_phase", "A")
+st.session_state.setdefault("dna_quiz_prefs", {})
+st.session_state.setdefault("dna_quiz_titles", [])
+st.session_state.setdefault("dna_quiz_current", 0)
+st.session_state.setdefault("dna_quiz_liked", [])
+st.session_state.setdefault("dna_quiz_results", None)
+
+_quiz_phase = st.session_state["dna_quiz_phase"]
+
+
+def _reset_quiz():
+    st.session_state["dna_quiz_phase"] = "A"
+    st.session_state["dna_quiz_prefs"] = {}
+    st.session_state["dna_quiz_titles"] = []
+    st.session_state["dna_quiz_current"] = 0
+    st.session_state["dna_quiz_liked"] = []
+    st.session_state["dna_quiz_results"] = None
+
+
+# Collect genre options
 _all_genre_counts: dict[str, int] = {}
-for genres in raw_df["genres"].dropna():
-    if isinstance(genres, list):
-        for g in genres:
-            _all_genre_counts[g] = _all_genre_counts.get(g, 0) + 1
+for _g_list in raw_df["genres"].dropna():
+    if isinstance(_g_list, list):
+        for _g in _g_list:
+            _all_genre_counts[_g] = _all_genre_counts.get(_g, 0) + 1
 _sorted_genres = sorted(_all_genre_counts.keys(), key=lambda g: -_all_genre_counts[g])
-_genre_display = [g.title() for g in _sorted_genres]
-_display_to_raw = {g.title(): g for g in _sorted_genres}
 
-with st.form("platform_matcher_form"):
-    selected_genre_labels = st.multiselect(
-        "Your favorite genres",
-        options=_genre_display,
-        default=[],
-        help="Select the genres you enjoy most",
+# Genre display with icons
+_GENRE_ICONS = {
+    "drama": "🎭", "comedy": "😂", "thriller": "😰", "action": "💥",
+    "romance": "💕", "documentation": "🎬", "crime": "🔍", "family": "👨‍👩‍👧‍👦",
+    "animation": "✏️", "scifi": "🚀", "fantasy": "🐉", "horror": "👻",
+    "music": "🎵", "history": "📜", "western": "🤠", "war": "⚔️",
+    "sport": "⚽", "reality": "📺", "european": "🌍",
+}
+_GENRE_DISPLAY_NAMES = {
+    "documentation": "Documentary", "scifi": "Sci-Fi",
+}
+
+# ---- PHASE A: Genre Selection + Preferences ----
+if _quiz_phase == "A":
+    st.markdown(
+        f'<div style="color:{CARD_ACCENT};font-weight:600;font-size:1.05em;'
+        f'margin-bottom:8px;">Step 1: Pick Your Favorites</div>',
+        unsafe_allow_html=True,
     )
 
-    sl1, sl2 = st.columns(2)
-    with sl1:
-        recency = st.slider(
-            "Classics vs New Releases",
-            min_value=0,
-            max_value=100,
-            value=50,
-            help="0 = Classic films and shows, 100 = Latest releases only",
-        )
-        popularity = st.slider(
-            "Hidden Gems vs Blockbusters",
-            min_value=0,
-            max_value=100,
-            value=50,
-            help="0 = Hidden gems and indie content, 100 = Mainstream hits",
-        )
-        runtime_pref = st.slider(
-            "Shorter vs Longer Content",
-            min_value=0,
-            max_value=100,
-            value=50,
-            help="0 = Quick watches (under 90 min), 100 = Longer epics",
+    # Genre toggle grid — use session state for selection
+    st.session_state.setdefault("dna_quiz_genres", [])
+
+    _top_genres = _sorted_genres[:12]
+    _gcols = st.columns(4)
+    for gi, gkey in enumerate(_top_genres):
+        with _gcols[gi % 4]:
+            icon = _GENRE_ICONS.get(gkey, "🎬")
+            label = _GENRE_DISPLAY_NAMES.get(gkey, gkey.title())
+            is_selected = gkey in st.session_state["dna_quiz_genres"]
+            border_color = CARD_ACCENT if is_selected else CARD_BORDER
+            bg = f"rgba(255,215,0,0.08)" if is_selected else CARD_BG
+            if st.button(
+                f"{icon} {label}",
+                key=f"genre_toggle_{gkey}",
+                use_container_width=True,
+            ):
+                if gkey in st.session_state["dna_quiz_genres"]:
+                    st.session_state["dna_quiz_genres"].remove(gkey)
+                else:
+                    st.session_state["dna_quiz_genres"].append(gkey)
+                st.rerun()
+
+    sel_genres = st.session_state["dna_quiz_genres"]
+    if sel_genres:
+        sel_labels = [_GENRE_DISPLAY_NAMES.get(g, g.title()) for g in sel_genres]
+        st.markdown(
+            f'<div style="color:{CARD_TEXT_MUTED};font-size:0.85em;margin:4px 0 12px;">'
+            f'Selected: <span style="color:{CARD_ACCENT};">{", ".join(sel_labels)}</span></div>',
+            unsafe_allow_html=True,
         )
 
-    with sl2:
-        maturity = st.slider(
-            "Family-Friendly vs Mature",
-            min_value=0,
-            max_value=100,
-            value=50,
-            help="0 = Family-friendly (G, PG), 100 = Mature (R, TV-MA)",
-        )
-        content_type = st.slider(
-            "Movies vs Shows",
-            min_value=0,
-            max_value=100,
-            value=50,
-            help="0 = Primarily series, 100 = Primarily movies",
-        )
-        international = st.slider(
-            "Domestic vs International",
-            min_value=0,
-            max_value=100,
-            value=50,
-            help="0 = US/domestic content, 100 = International content",
-        )
-
-    submitted = st.form_submit_button(
-        "Find My Platform", use_container_width=True
+    # Quick preferences
+    st.markdown(
+        f'<div style="color:{CARD_ACCENT};font-weight:600;font-size:1.05em;'
+        f'margin:16px 0 8px;">Step 2: Set Your Vibe</div>',
+        unsafe_allow_html=True,
     )
+    pref_c1, pref_c2, pref_c3 = st.columns(3)
+    with pref_c1:
+        quality_pref = st.radio(
+            "What do you look for?",
+            options=["No Preference", "Award Winners", "Crowd Favorites"],
+            index=0,
+            help="Award Winners = high IMDb ratings, Crowd Favorites = popular hits",
+        )
+    with pref_c2:
+        type_pref = st.radio(
+            "Movies or shows?",
+            options=["Both", "Movies", "Shows"],
+            index=0,
+        )
+    with pref_c3:
+        vibe_pref = st.radio(
+            "What's your vibe?",
+            options=["Mix of Both", "Feel-Good & Light", "Dark & Intense"],
+            index=0,
+        )
 
-if submitted:
-    if not selected_genre_labels:
-        st.warning("Please select at least one genre to find your match.")
-    else:
-        user_prefs = {
-            "genres": [_display_to_raw[g] for g in selected_genre_labels],
-            "recency": recency,
-            "popularity": popularity,
-            "runtime": runtime_pref,
-            "maturity": maturity,
-            "content_type": content_type,
-            "international": international,
+    # Start quiz button
+    if st.button(
+        "Start the Quiz",
+        use_container_width=True,
+        disabled=len(sel_genres) == 0,
+        help="Select at least one genre to begin",
+    ):
+        prefs = {
+            "genres": sel_genres,
+            "quality": quality_pref,
+            "type": type_pref,
+            "vibe": vibe_pref,
         }
+        with st.spinner("Curating titles for you..."):
+            titles = curate_quiz_titles(
+                raw_df,
+                selected_genres=sel_genres,
+                quality_pref=quality_pref,
+                type_pref=type_pref,
+                vibe_pref=vibe_pref,
+            )
+        st.session_state["dna_quiz_prefs"] = prefs
+        st.session_state["dna_quiz_titles"] = titles
+        st.session_state["dna_quiz_current"] = 0
+        st.session_state["dna_quiz_liked"] = []
+        st.session_state["dna_quiz_phase"] = "B"
+        st.rerun()
 
-        with st.spinner("Finding your perfect platform match..."):
-            results = compute_user_match_scores(user_prefs, raw_df)
+    if len(sel_genres) == 0:
+        st.caption("Select at least one genre above to start the quiz.")
 
-        if not results:
-            st.info("Unable to compute match scores. Try adjusting your filters.")
-        else:
-            # Best match hero card
-            best = results[0]
-            best_color = PLATFORMS[best["platform"]]["color"]
+
+# ---- PHASE B: Title Swipe ----
+elif _quiz_phase == "B":
+    quiz_titles = st.session_state["dna_quiz_titles"]
+    current_idx = st.session_state["dna_quiz_current"]
+
+    if not quiz_titles:
+        st.warning("Could not find enough titles. Try different preferences.")
+        if st.button("Back to Preferences"):
+            _reset_quiz()
+            st.rerun()
+    elif current_idx >= len(quiz_titles):
+        # All titles swiped — go to results
+        st.session_state["dna_quiz_phase"] = "C"
+        st.rerun()
+    else:
+        title = quiz_titles[current_idx]
+        progress = (current_idx + 1) / len(quiz_titles)
+        st.progress(progress, text=f"Title {current_idx + 1} of {len(quiz_titles)}")
+
+        # Title card
+        t_platform = title.get("platform", "")
+        t_color = PLATFORMS.get(t_platform, {}).get("color", CARD_BORDER)
+        t_pname = PLATFORMS.get(t_platform, {}).get("name", t_platform)
+        t_imdb = f"{title['imdb_score']:.1f}" if title.get("imdb_score") else "N/A"
+        t_year = str(int(title["release_year"])) if title.get("release_year") else ""
+        t_type = title.get("type", "")
+
+        # Genre pills
+        genre_pills = ""
+        for g in (title.get("genres") or [])[:4]:
+            genre_pills += (
+                f'<span style="display:inline-block;background:rgba(255,255,255,0.06);'
+                f"color:{CARD_TEXT_MUTED};border-radius:8px;padding:2px 8px;"
+                f'font-size:0.78em;margin-right:4px;">{str(g).title()}</span>'
+            )
+
+        # Platform badges
+        plat_badges = ""
+        for p in (title.get("platforms") or [title.get("platform", "")]):
+            pc = PLATFORMS.get(p, {}).get("color", CARD_BORDER)
+            pn = PLATFORMS.get(p, {}).get("name", p)
+            plat_badges += (
+                f'<span style="display:inline-block;background:{pc};color:#fff;'
+                f'border-radius:4px;padding:1px 8px;font-size:0.75em;'
+                f'margin-right:4px;font-weight:600;">{pn}</span>'
+            )
+
+        desc = title.get("description", "")
+
+        st.markdown(
+            f'<div style="background:{CARD_BG};border:2px solid {t_color};'
+            f'border-radius:12px;padding:24px;max-width:600px;margin:0 auto 16px;">'
+            f'<div style="font-size:1.3em;font-weight:700;color:{CARD_TEXT};'
+            f'margin-bottom:6px;">{title["title"]}</div>'
+            f'<div style="margin-bottom:8px;">{plat_badges}</div>'
+            f'<div style="color:{CARD_TEXT_MUTED};font-size:0.88em;margin-bottom:8px;">'
+            f'{t_year} · {t_type} · IMDb {t_imdb}</div>'
+            f'<div style="margin-bottom:10px;">{genre_pills}</div>'
+            f'<div style="color:{CARD_TEXT};font-size:0.92em;line-height:1.6;">'
+            f'{desc}</div></div>',
+            unsafe_allow_html=True,
+        )
+
+        # Swipe buttons
+        btn_l, btn_r = st.columns(2)
+        with btn_l:
+            if st.button(
+                "Not For Me",
+                key=f"quiz_pass_{current_idx}",
+                use_container_width=True,
+            ):
+                st.session_state["dna_quiz_current"] = current_idx + 1
+                st.rerun()
+        with btn_r:
+            if st.button(
+                "I'd Watch This",
+                key=f"quiz_like_{current_idx}",
+                use_container_width=True,
+                type="primary",
+            ):
+                st.session_state["dna_quiz_liked"].append(title["id"])
+                st.session_state["dna_quiz_current"] = current_idx + 1
+                st.rerun()
+
+        # Skip to results button
+        if current_idx >= 3:
+            if st.button("Skip to results", key="quiz_skip"):
+                st.session_state["dna_quiz_phase"] = "C"
+                st.rerun()
+
+
+# ---- PHASE C: Results ----
+elif _quiz_phase == "C":
+    liked_ids = st.session_state["dna_quiz_liked"]
+    quiz_titles = st.session_state["dna_quiz_titles"]
+
+    if not liked_ids:
+        st.info("You didn't like any titles. Try again with different preferences!")
+        if st.button("Start Over"):
+            _reset_quiz()
+            st.rerun()
+    else:
+        # Compute results if not cached
+        if st.session_state["dna_quiz_results"] is None:
+            with st.spinner("Analyzing your taste..."):
+                st.session_state["dna_quiz_results"] = compute_swipe_results(
+                    liked_ids, quiz_titles, raw_df
+                )
+
+        results = st.session_state["dna_quiz_results"]
+        rankings = results.get("rankings", [])
+        personality = results.get("personality", "")
+        recommendations = results.get("recommendations", [])
+
+        if rankings:
+            # Hero card — best match
+            best = rankings[0]
+            best_color = PLATFORMS.get(best["platform"], {}).get("color", CARD_ACCENT)
 
             st.markdown(
                 f'<div style="background:{CARD_BG};border:2px solid {best_color};'
                 f'border-radius:12px;padding:24px;text-align:center;margin:16px 0;">'
                 f'<div style="font-size:0.9em;color:{CARD_TEXT_MUTED};">'
-                f"Your best match is</div>"
+                f"You're a</div>"
                 f'<div style="font-size:2em;font-weight:700;color:{best_color};'
-                f'margin:4px 0;">{best["display_name"]}</div>'
+                f'margin:4px 0;">{best["display_name"]} Person</div>'
                 f'<div style="font-size:1.4em;color:{CARD_ACCENT};margin-bottom:8px;">'
                 f'{best["match_pct"]:.1f}% Match</div>'
                 f'<div style="font-size:0.9em;color:{CARD_TEXT};line-height:1.6;'
@@ -893,46 +1130,62 @@ if submitted:
                 unsafe_allow_html=True,
             )
 
-            # Your Viewing DNA personality card
-            dna_traits = []
-            if recency > 70:
-                dna_traits.append("new release hunter")
-            elif recency < 30:
-                dna_traits.append("classics lover")
-            if popularity > 70:
-                dna_traits.append("mainstream fan")
-            elif popularity < 30:
-                dna_traits.append("hidden gem seeker")
-            if maturity > 70:
-                dna_traits.append("mature content viewer")
-            elif maturity < 30:
-                dna_traits.append("family-friendly watcher")
-            if international > 70:
-                dna_traits.append("global cinema explorer")
-            elif international < 30:
-                dna_traits.append("domestic content fan")
-            if content_type > 70:
-                dna_traits.append("movie buff")
-            elif content_type < 30:
-                dna_traits.append("series binger")
-            genre_str = ", ".join(selected_genre_labels[:4])
-            if dna_traits:
-                persona = ", ".join(dna_traits[:3])
+            # Personality summary
+            if personality:
                 st.markdown(
                     f'<div style="background:{CARD_BG};border:1px solid {CARD_BORDER};'
                     f'border-radius:8px;padding:12px 16px;margin-bottom:12px;'
-                    f'font-size:0.88em;color:{CARD_TEXT};line-height:1.6;">'
+                    f'font-size:0.92em;color:{CARD_TEXT};line-height:1.6;">'
                     f'<strong style="color:{CARD_ACCENT};">Your Viewing DNA:</strong> '
-                    f"You're a {persona} who loves {genre_str}.</div>",
+                    f'{personality}</div>',
                     unsafe_allow_html=True,
                 )
 
-            # Match bar chart for all platforms
-            match_df = pd.DataFrame(results)
-            match_colors = {
-                PLATFORMS[k]["name"]: PLATFORMS[k]["color"] for k in ALL_PLATFORMS
-            }
+            # Liked count
+            st.caption(
+                f"You liked {len(liked_ids)} of {len(quiz_titles)} titles "
+                f"({len(liked_ids)/max(len(quiz_titles),1)*100:.0f}% swipe rate)."
+            )
 
+            # Recommendations from best platform
+            if recommendations:
+                st.markdown(
+                    f'<div style="color:{CARD_ACCENT};font-weight:600;font-size:1.05em;'
+                    f'margin:16px 0 8px;">Titles You\'ll Love on {best["display_name"]}</div>',
+                    unsafe_allow_html=True,
+                )
+                rec_cols = st.columns(min(len(recommendations), 5))
+                for ri, rec in enumerate(recommendations[:5]):
+                    with rec_cols[ri % len(rec_cols)]:
+                        r_imdb = f"{rec['imdb_score']:.1f}" if rec.get("imdb_score") else "N/A"
+                        r_year = str(int(rec["release_year"])) if rec.get("release_year") else ""
+                        r_genres = ""
+                        if isinstance(rec.get("genres"), list):
+                            for rg in rec["genres"][:2]:
+                                r_genres += (
+                                    f'<span style="display:inline-block;'
+                                    f"background:rgba(255,255,255,0.06);"
+                                    f"color:{CARD_TEXT_MUTED};border-radius:8px;"
+                                    f'padding:1px 6px;font-size:0.72em;'
+                                    f'margin-right:3px;">{str(rg).title()}</span>'
+                                )
+                        st.markdown(
+                            f'<div style="background:{CARD_BG};border-left:3px solid {best_color};'
+                            f'border-radius:6px;padding:10px 12px;margin-bottom:6px;">'
+                            f'<span style="color:{CARD_TEXT};font-weight:600;font-size:0.9em;">'
+                            f'{rec["title"]}</span>'
+                            f'<br/><span style="color:{CARD_TEXT_MUTED};font-size:0.78em;">'
+                            f'{r_year} · IMDb {r_imdb}</span>'
+                            f'<br/>{r_genres}</div>',
+                            unsafe_allow_html=True,
+                        )
+
+            # Match bar chart
+            match_df = pd.DataFrame(rankings)
+            match_colors = {
+                PLATFORMS.get(k, {}).get("name", k): PLATFORMS.get(k, {}).get("color", "#888")
+                for k in ALL_PLATFORMS
+            }
             fig_match = px.bar(
                 match_df,
                 x="display_name",
@@ -955,9 +1208,9 @@ if submitted:
             )
             st.plotly_chart(fig_match, use_container_width=True)
 
-            # Per-platform explanation cards
-            for result in results[1:]:
-                p_color = PLATFORMS[result["platform"]]["color"]
+            # Runner-up cards
+            for result in rankings[1:]:
+                p_color = PLATFORMS.get(result["platform"], {}).get("color", CARD_BORDER)
                 st.markdown(
                     f'<div style="background:{CARD_BG};border-left:3px solid {p_color};'
                     f'border-radius:6px;padding:10px 14px;margin-bottom:6px;">'
@@ -969,6 +1222,11 @@ if submitted:
                     f'{result["explanation"]}</span></div>',
                     unsafe_allow_html=True,
                 )
+
+        # Retake quiz button
+        if st.button("Take Quiz Again", use_container_width=True):
+            _reset_quiz()
+            st.rerun()
 
 
 # -- footer --------------------------------------------------------------------

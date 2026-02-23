@@ -39,7 +39,8 @@ from src.config import (
     PLOTLY_TEMPLATE,
     QUALITY_TIERS,
 )
-from src.data.loaders import load_all_platforms_credits, load_all_platforms_titles
+from src.config import WIKIDATA_COMPARISON_MIN_COVERAGE
+from src.data.loaders import load_all_platforms_credits, load_all_platforms_titles, load_enriched_titles
 from src.ui.filters import apply_filters, render_sidebar_filters
 from src.ui.session import init_session_state
 
@@ -133,6 +134,15 @@ def _render_expanded_card(title_row, title_id: str, platform_name: str = ""):
             )
         else:
             st.caption("No description available.")
+
+    # Top Franchises from TMDB collection data
+    _enr_detail = load_enriched_titles()
+    if not _enr_detail.empty and "collection_name" in _enr_detail.columns:
+        _enr_match = _enr_detail[_enr_detail["id"] == title_id]
+        if not _enr_match.empty:
+            _coll = _enr_match.iloc[0].get("collection_name")
+            if _coll and str(_coll) != "nan":
+                st.markdown(f"**Franchise:** {_coll}")
 
     with cast_col:
         credits_df = load_all_platforms_credits()
@@ -406,7 +416,40 @@ with vol_table:
             "avg_imdb": "Avg IMDb",
         }
     )
+
+    # Add Prestige Score column if award data has sufficient coverage
+    _enr_for_prestige = load_enriched_titles()
+    _prestige_coverage = _enr_for_prestige["award_wins"].notna().mean() if "award_wins" in _enr_for_prestige.columns else 0
+    if _prestige_coverage >= WIKIDATA_COMPARISON_MIN_COVERAGE and "award_wins" in _enr_for_prestige.columns:
+        prestige_scores = []
+        for _, row in display_summary.iterrows():
+            plat_name = row["Platform"]
+            # Find platform key from display name
+            plat_key = None
+            for k, v in PLATFORMS.items():
+                if v.get("name") == plat_name:
+                    plat_key = k
+                    break
+            if plat_key and plat_key != "merged":
+                plat_data = _enr_for_prestige[_enr_for_prestige["platform"] == plat_key]
+            elif plat_key == "merged":
+                from src.config import MERGED_PLATFORMS
+                plat_data = _enr_for_prestige[_enr_for_prestige["platform"].isin(MERGED_PLATFORMS)]
+            else:
+                plat_data = pd.DataFrame()
+            if not plat_data.empty:
+                n_titles = len(plat_data)
+                award_wins = plat_data["award_wins"].fillna(0).sum()
+                prestige_scores.append(round(award_wins / n_titles * 1000, 1))
+            else:
+                prestige_scores.append(None)
+        display_summary["Prestige"] = prestige_scores
+    else:
+        display_summary["Prestige"] = "—"
+
     st.dataframe(display_summary, use_container_width=True, hide_index=True)
+    if _prestige_coverage < WIKIDATA_COMPARISON_MIN_COVERAGE:
+        st.caption(f"Prestige Score unavailable (award coverage: {_prestige_coverage:.0%}, need ≥{WIKIDATA_COMPARISON_MIN_COVERAGE:.0%})")
 
 
 # ── Section 2: Content Quality ───────────────────────────────────────────────

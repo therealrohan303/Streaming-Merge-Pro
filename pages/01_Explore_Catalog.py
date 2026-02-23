@@ -23,31 +23,13 @@ from src.data.loaders import (
     get_credits_for_view,
     get_titles_for_view,
     load_all_platforms_titles,
+    load_enriched_titles,
     load_merged_titles,
     load_similarity_data,
 )
+from src.ui.badges import platform_badges_html
 from src.ui.filters import apply_filters, render_sidebar_filters
 from src.ui.session import DEFAULTS, init_session_state
-
-
-def _platform_badge(key: str) -> str:
-    """Return an HTML badge for a platform."""
-    meta = PLATFORMS.get(key, {})
-    name = meta.get("name", key.title())
-    bg = meta.get("color", "#555")
-    fg = meta.get("text_color", "#FFF")
-    return (
-        f'<span style="background:{bg};color:{fg};padding:2px 8px;'
-        f'border-radius:4px;font-size:0.75em;font-weight:600;'
-        f'letter-spacing:0.02em;margin-right:3px;">{name}</span>'
-    )
-
-
-def _platform_badges(platforms) -> str:
-    """Return combined HTML badges for a list of platform keys."""
-    if isinstance(platforms, list):
-        return "".join(_platform_badge(p) for p in platforms)
-    return _platform_badge(platforms)
 
 
 _PLATFORM_LABELS = {
@@ -374,7 +356,7 @@ with left_col:
                 if row["release_year"] == row["release_year"]
                 else "?"
             )
-            plat_badge = _platform_badges(row.get("platforms", row.get("platform", "")))
+            plat_badge = platform_badges_html(row.get("platforms", row.get("platform", "")))
 
             # Selected state: gold border + subtle glow; default: hover effects
             if is_selected:
@@ -436,9 +418,35 @@ with right_col:
         else:
             sel = sel_rows.iloc[0]
 
+            # Load enrichment data for this title
+            _enriched = load_enriched_titles()
+            _enr_row = _enriched[_enriched["id"] == selected_id]
+            _has_enr = not _enr_row.empty
+            _enr = _enr_row.iloc[0] if _has_enr else None
+
             with st.container(border=True):
+                # ── Poster image ──
+                _poster = None
+                if _has_enr and "poster_url" in _enr_row.columns:
+                    _poster = _enr.get("poster_url")
+                if _poster and str(_poster) != "nan":
+                    st.image(_poster, width=200)
+
                 # ── Detail card ──
                 st.subheader(sel["title"])
+
+                # Award badge
+                if _has_enr and "award_wins" in _enr_row.columns:
+                    _aw = _enr.get("award_wins", 0)
+                    _an = _enr.get("award_noms", 0)
+                    if _aw and _aw > 0:
+                        _noms_str = f", {int(_an)} nominations" if _an and _an > 0 else ""
+                        st.markdown(
+                            f'<span style="background:rgba(255,215,0,0.15);color:#FFD700;'
+                            f'padding:4px 12px;border-radius:12px;font-size:0.85em;">'
+                            f'🏆 {int(_aw)} wins{_noms_str}</span>',
+                            unsafe_allow_html=True,
+                        )
 
                 # Metadata row
                 m1, m2, m3, m4 = st.columns(4)
@@ -463,7 +471,7 @@ with right_col:
                     plat_label = "Platforms" if isinstance(plat_list, list) and len(plat_list) > 1 else "Platform"
                     st.markdown(
                         f"<div style='font-size:0.82em;color:{CARD_TEXT_MUTED};margin-bottom:4px;'>{plat_label}</div>"
-                        f"<div>{_platform_badges(plat_list)}</div>",
+                        f"<div>{platform_badges_html(plat_list)}</div>",
                         unsafe_allow_html=True,
                     )
 
@@ -496,6 +504,16 @@ with right_col:
                     else:
                         pop_str = f"{pop:.0f}"
                     captions.append(f"Popularity: {pop_str}")
+                # Box office from enrichment
+                if _has_enr and "box_office_usd" in _enr_row.columns:
+                    _bo = _enr.get("box_office_usd")
+                    if _bo and str(_bo) != "nan" and _bo > 0:
+                        if _bo >= 1e9:
+                            captions.append(f"Box Office: ${_bo/1e9:.1f}B (Wikidata)")
+                        elif _bo >= 1e6:
+                            captions.append(f"Box Office: ${_bo/1e6:.0f}M (Wikidata)")
+                        else:
+                            captions.append(f"Box Office: ${_bo:,.0f} (Wikidata)")
                 if captions:
                     st.caption(" | ".join(captions))
 
@@ -616,7 +634,7 @@ with right_col:
                     sim_imdb_str = (
                         f"{sim_imdb:.1f}" if sim_imdb == sim_imdb else "N/A"
                     )
-                    sim_plat_badge = _platform_badges(sim_row.get("platforms", sim_row.get("platform", "")))
+                    sim_plat_badge = platform_badges_html(sim_row.get("platforms", sim_row.get("platform", "")))
 
                     year_str = (
                         str(int(sim_row["release_year"]))
@@ -646,6 +664,11 @@ with right_col:
                     ):
                         st.session_state["explore_selected_id"] = sim_id
                         st.rerun()
+
+            st.page_link(
+                "pages/04_Discovery_Engine.py",
+                label="For deeper recommendations with why-similar explanations → Discovery Engine",
+            )
 
             with st.expander("How Similar Titles Work"):
                 st.markdown(
