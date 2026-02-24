@@ -38,13 +38,20 @@ from src.analysis.lab import (
     get_talent_suggestions,
     predict_title,
 )
+from src.ui.badges import section_header_html, styled_metric_card_html
 from src.ui.session import init_session_state
 
 st.set_page_config(page_title="Interactive Lab", page_icon="📊", layout="wide")
 init_session_state()
 
-st.title("Interactive Lab")
-st.caption("Playful, data-driven features — build a service, predict a title's success, or discover surprising insights.")
+st.markdown(
+    section_header_html(
+        "Interactive Lab",
+        "Playful, data-driven features — build a service, predict a title's success, or discover surprising insights.",
+        font_size="2em",
+    ),
+    unsafe_allow_html=True,
+)
 
 # ─── Data ───────────────────────────────────────────────────────────────────
 enriched = load_enriched_titles()
@@ -60,8 +67,10 @@ tab1, tab2, tab3 = st.tabs([
 
 # ─── Feature 1: Build Your Streaming Service ────────────────────────────────
 with tab1:
-    st.subheader("Build Your Streaming Service")
-    st.caption("Draft titles within a budget and compare your service against Netflix + Max.")
+    st.markdown(
+        section_header_html("Build Your Streaming Service", "Draft titles within a budget and compare your service against Netflix + Max."),
+        unsafe_allow_html=True,
+    )
 
     BUDGET = 5000  # Total budget in "millions"
 
@@ -103,8 +112,8 @@ with tab1:
     remaining = BUDGET - stats["spend"]
 
     st.markdown(f"""
-    <div style="background:{CARD_BG};border:1px solid {CARD_BORDER};border-radius:8px;
-                padding:12px 16px;margin-bottom:16px;">
+    <div style="background:{CARD_BG};border:1px solid {CARD_BORDER};border-top:3px solid {CARD_ACCENT};
+                border-radius:8px;padding:12px 16px;margin-bottom:16px;">
         <div style="display:flex;justify-content:space-between;">
             <span style="color:{CARD_TEXT};">Budget: <b style="color:{CARD_ACCENT};">${remaining:,.0f}M</b> remaining of ${BUDGET:,}M</span>
             <span style="color:{CARD_TEXT};">Titles: <b>{stats['count']}</b> | Avg IMDb: <b>{stats['avg_imdb']:.2f}</b> | Diversity: <b>{stats['diversity']:.2f}</b></span>
@@ -138,8 +147,8 @@ with tab1:
 
     # Drafted titles
     if st.session_state.drafted:
-        st.markdown("---")
-        st.subheader("Your Drafted Catalog")
+        st.divider()
+        st.markdown(section_header_html("Your Drafted Catalog"), unsafe_allow_html=True)
         for i, d in enumerate(st.session_state.drafted):
             col1, col2 = st.columns([4, 1])
             with col1:
@@ -150,19 +159,19 @@ with tab1:
                     st.rerun()
 
         # Compare vs Netflix+Max
-        st.subheader("Compare vs Netflix + Max")
+        st.markdown(section_header_html("Compare vs Netflix + Max"), unsafe_allow_html=True)
         merged = load_merged_titles()
         comparison = compare_services(stats, merged)
 
         col_you, col_them = st.columns(2)
         with col_you:
-            st.metric("Your Service", f"{comparison['drafted']['count']} titles")
-            st.metric("Avg IMDb", f"{comparison['drafted']['avg_imdb']:.2f}")
-            st.metric("Genre Diversity", f"{comparison['drafted']['diversity']:.2f}")
+            st.markdown(styled_metric_card_html("Your Service", f"{comparison['drafted']['count']} titles"), unsafe_allow_html=True)
+            st.markdown(styled_metric_card_html("Avg IMDb", f"{comparison['drafted']['avg_imdb']:.2f}"), unsafe_allow_html=True)
+            st.markdown(styled_metric_card_html("Genre Diversity", f"{comparison['drafted']['diversity']:.2f}"), unsafe_allow_html=True)
         with col_them:
-            st.metric("Netflix + Max", f"{comparison['merged']['count']:,} titles")
-            st.metric("Avg IMDb", f"{comparison['merged']['avg_imdb']:.2f}")
-            st.metric("Genre Diversity", f"{comparison['merged']['diversity']:.2f}")
+            st.markdown(styled_metric_card_html("Netflix + Max", f"{comparison['merged']['count']:,} titles"), unsafe_allow_html=True)
+            st.markdown(styled_metric_card_html("Avg IMDb", f"{comparison['merged']['avg_imdb']:.2f}"), unsafe_allow_html=True)
+            st.markdown(styled_metric_card_html("Genre Diversity", f"{comparison['merged']['diversity']:.2f}"), unsafe_allow_html=True)
 
         # Genre distribution donut
         if stats["genres"]:
@@ -188,8 +197,10 @@ with tab1:
 
 # ─── Feature 2: Hypothetical Title Predictor ────────────────────────────────
 with tab2:
-    st.subheader("Hypothetical Title Predictor")
-    st.caption("Predict how a hypothetical title would perform using our trained Greenlight model.")
+    st.markdown(
+        section_header_html("Hypothetical Title Predictor", "Predict how a hypothetical title would perform using our trained Greenlight model."),
+        unsafe_allow_html=True,
+    )
 
     col_input1, col_input2 = st.columns(2)
 
@@ -259,7 +270,7 @@ with tab2:
                                   f"{result['cv_rmse']:.3f}")
 
                 # Feature importances (mandatory)
-                st.subheader("Feature Importances")
+                st.markdown(section_header_html("Feature Importances"), unsafe_allow_html=True)
                 imp_df = pd.DataFrame({
                     "Feature": result["importances"].index,
                     "Importance": result["importances"].values,
@@ -295,7 +306,7 @@ with tab2:
                     """)
 
                 # Talent suggestions
-                st.subheader("Talent Suggestions")
+                st.markdown(section_header_html("Talent Suggestions"), unsafe_allow_html=True)
                 principals = load_imdb_principals()
                 all_titles = load_all_platforms_titles()
 
@@ -318,8 +329,10 @@ with tab2:
 
 # ─── Feature 3: Insight Generator ───────────────────────────────────────────
 with tab3:
-    st.subheader("Insight Generator")
-    st.caption("Discover surprising, data-backed insights from the catalog — exploratory fun facts mode.")
+    st.markdown(
+        section_header_html("Insight Generator", "Discover surprising, data-backed insights from the catalog — exploratory fun facts mode."),
+        unsafe_allow_html=True,
+    )
 
     col_scope, col_btn = st.columns([2, 1])
     with col_scope:
@@ -363,9 +376,11 @@ with tab3:
         """, unsafe_allow_html=True)
 
 # ─── Footer ─────────────────────────────────────────────────────────────────
-st.markdown("---")
-st.caption(
-    "Hypothetical merger for academic analysis. Data is a snapshot (mid-2023). "
-    "Enrichment data: IMDb datasets, Wikidata, MovieLens 20M, TMDB API. "
-    "Predictor models are trained on catalog metadata only — predictions are directional, not precise."
+st.markdown(
+    '<div style="border-top:1px solid #333;padding:16px 0;color:#666;'
+    'font-size:0.8em;text-align:center;">'
+    'Hypothetical merger for academic analysis. Data is a snapshot (mid-2023). '
+    'All insights are illustrative, not prescriptive.'
+    '</div>',
+    unsafe_allow_html=True,
 )

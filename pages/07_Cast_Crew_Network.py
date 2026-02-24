@@ -37,13 +37,20 @@ from src.analysis.network import (
     get_rankings,
     search_person,
 )
+from src.ui.badges import section_header_html, styled_metric_card_html, styled_banner_html
 from src.ui.session import init_session_state
 
 st.set_page_config(page_title="Cast & Crew Network", page_icon="📊", layout="wide")
 init_session_state()
 
-st.title("Cast & Crew Network")
-st.caption("Explore collaboration networks, rankings, and influence across the streaming landscape.")
+st.markdown(
+    section_header_html(
+        "Cast & Crew Network",
+        "Explore collaboration networks, rankings, and influence across the streaming landscape.",
+        font_size="2em",
+    ),
+    unsafe_allow_html=True,
+)
 
 # ─── Data Loading ───────────────────────────────────────────────────────────
 person_stats = load_person_stats()
@@ -60,8 +67,10 @@ has_network = not person_stats.empty and not edges_df.empty
 has_principals = not principals.empty and len(principals) > 1000
 
 # ─── Section 1: Person Search & Profile ─────────────────────────────────────
-st.header("Person Search & Profile")
-st.caption("Search for any actor, director, writer, producer, composer, or cinematographer.")
+st.markdown(
+    section_header_html("Person Search & Profile", "Search for any actor, director, writer, producer, composer, or cinematographer."),
+    unsafe_allow_html=True,
+)
 
 col_search, col_role, col_min = st.columns([3, 1, 1])
 with col_search:
@@ -94,31 +103,35 @@ if query and has_network:
 
         if profile:
             # Key stats
-            st.subheader(profile["name"])
+            st.markdown(section_header_html(profile["name"]), unsafe_allow_html=True)
             col1, col2, col3, col4, col5 = st.columns(5)
             with col1:
-                st.metric("Avg IMDb", f"{profile.get('avg_imdb', 'N/A')}")
+                st.markdown(styled_metric_card_html("Avg IMDb", f"{profile.get('avg_imdb', 'N/A')}"), unsafe_allow_html=True)
             with col2:
-                st.metric("Titles", profile.get("title_count", 0))
+                st.markdown(styled_metric_card_html("Titles", profile.get("title_count", 0)), unsafe_allow_html=True)
             with col3:
                 career = ""
                 if profile.get("career_start") and profile.get("career_end"):
                     career = f"{profile['career_start']}-{profile['career_end']}"
-                st.metric("Career Span", career or "N/A")
+                st.markdown(styled_metric_card_html("Career Span", career or "N/A"), unsafe_allow_html=True)
             with col4:
-                st.metric("Top Genre", profile.get("top_genre", "N/A"))
+                st.markdown(styled_metric_card_html("Top Genre", profile.get("top_genre", "N/A")), unsafe_allow_html=True)
             with col5:
-                st.metric("Role", profile.get("primary_role", "N/A"))
+                st.markdown(styled_metric_card_html("Role", profile.get("primary_role", "N/A")), unsafe_allow_html=True)
 
             # Awards context
             award_titles = profile.get("award_titles", [])
             if award_titles:
-                st.info(f"Award-winning work: {len(award_titles)} titles with awards")
+                st.markdown(
+                    styled_banner_html("🏆", f"Award-winning work: {len(award_titles)} titles with awards",
+                                       bg="rgba(255,215,0,0.1)", border_color="#FFD700"),
+                    unsafe_allow_html=True,
+                )
 
             # Top collaborators
             collabs = profile.get("top_collaborators", [])
             if collabs:
-                st.subheader("Top Collaborators")
+                st.markdown(section_header_html("Top Collaborators"), unsafe_allow_html=True)
                 for c in collabs[:5]:
                     st.markdown(f"- **{c.get('name', 'Unknown')}** ({c.get('role', '')}) — "
                                f"{c.get('weight', 0)} shared titles")
@@ -126,7 +139,7 @@ if query and has_network:
             # Filmography
             filmography = profile.get("filmography", pd.DataFrame())
             if not filmography.empty:
-                st.subheader("Filmography")
+                st.markdown(section_header_html("Filmography"), unsafe_allow_html=True)
                 display_cols = ["title", "release_year", "imdb_score", "type", "platform"]
                 if "role" in filmography.columns:
                     display_cols.insert(3, "role")
@@ -159,11 +172,13 @@ elif query and not has_network:
                f"edges={'found (' + str(len(edges_df)) + ' rows)' if not edges_df.empty else 'MISSING'}. "
                "Run `scripts/12_precompute_network.py` to generate.")
 
-st.markdown("---")
+st.divider()
 
 # ─── Section 2: Community Detection ─────────────────────────────────────────
-st.header("Creative Circles")
-st.caption("Communities detected via Louvain algorithm on the collaboration graph.")
+st.markdown(
+    section_header_html("Creative Circles", "Communities detected via Louvain algorithm on the collaboration graph."),
+    unsafe_allow_html=True,
+)
 
 if has_network and has_principals:
     # Get unique communities
@@ -198,9 +213,12 @@ if has_network and has_principals:
                     st.plotly_chart(fig, use_container_width=True)
 
     # Cross-platform bridges
-    st.subheader("Cross-Platform Bridges")
-    st.caption("Talent connecting Netflix-heavy and Max-heavy creative clusters — "
-               "the connective tissue of the merged entity.")
+    st.markdown(
+        section_header_html("Cross-Platform Bridges",
+                            "Talent connecting Netflix-heavy and Max-heavy creative clusters — "
+                            "the connective tissue of the merged entity."),
+        unsafe_allow_html=True,
+    )
 
     bridges = get_cross_platform_bridges(person_stats, edges_df)
     if not bridges.empty:
@@ -223,12 +241,15 @@ elif not has_principals:
 else:
     st.info("Network data required. Run `scripts/12_precompute_network.py` to generate collaboration graph.")
 
-st.markdown("---")
+st.divider()
 
 # ─── Section 3: Influence Scoring ───────────────────────────────────────────
-st.header("Influence Scoring")
-st.caption("Influence = PageRank x Avg IMDb x (1 + normalized award wins) — "
-           "identifies the most central and high-quality talent.")
+st.markdown(
+    section_header_html("Influence Scoring",
+                        "Influence = PageRank × Avg IMDb × (1 + normalized award wins) — "
+                        "identifies the most central and high-quality talent."),
+    unsafe_allow_html=True,
+)
 
 if has_network:
     top_influential = person_stats.nlargest(50, "influence_score")
@@ -261,10 +282,10 @@ if has_network:
 else:
     st.info("Network data required. Run `scripts/12_precompute_network.py` to generate collaboration graph.")
 
-st.markdown("---")
+st.divider()
 
 # ─── Section 4: Rankings ────────────────────────────────────────────────────
-st.header("Rankings")
+st.markdown(section_header_html("Rankings"), unsafe_allow_html=True)
 
 if has_network:
     tab_dir, tab_act, tab_wri = st.tabs(["Directors", "Actors", "Writers"])
@@ -336,9 +357,11 @@ else:
     st.info("Network data required. Run `scripts/12_precompute_network.py` to generate collaboration graph.")
 
 # ─── Footer ─────────────────────────────────────────────────────────────────
-st.markdown("---")
-st.caption(
-    "Hypothetical merger for academic analysis. Data is a snapshot (mid-2023). "
-    "Enrichment data: IMDb datasets, Wikidata, MovieLens 20M, TMDB API. "
-    "Network includes all role categories (actors, directors, writers, producers, composers, cinematographers)."
+st.markdown(
+    '<div style="border-top:1px solid #333;padding:16px 0;color:#666;'
+    'font-size:0.8em;text-align:center;">'
+    'Hypothetical merger for academic analysis. Data is a snapshot (mid-2023). '
+    'All insights are illustrative, not prescriptive.'
+    '</div>',
+    unsafe_allow_html=True,
 )

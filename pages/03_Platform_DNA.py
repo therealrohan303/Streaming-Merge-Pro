@@ -30,6 +30,7 @@ from src.config import (
     PLOTLY_TEMPLATE,
 )
 from src.data.loaders import load_all_platforms_titles, load_enriched_titles, load_umap_coords
+from src.ui.badges import section_header_html, styled_metric_card_html
 from src.ui.filters import apply_filters, render_sidebar_filters
 from src.ui.session import init_session_state
 
@@ -85,10 +86,14 @@ df = apply_filters(raw_df, filters)
 
 # -- page header ---------------------------------------------------------------
 
-st.title("Platform DNA")
-st.caption(
-    "What makes each platform feel different — identity fingerprints, "
-    "content landscape patterns, and your personal platform match"
+st.markdown(
+    section_header_html(
+        "Platform DNA",
+        "What makes each platform feel different — identity fingerprints, "
+        "content landscape patterns, and your personal platform match",
+        font_size="2em",
+    ),
+    unsafe_allow_html=True,
 )
 
 # Standalone methodology expander (separate from content)
@@ -117,11 +122,13 @@ with st.expander("How Platform DNA Works"):
 # SECTION 1: PLATFORM IDENTITY PROFILE
 # ==============================================================================
 
-st.markdown("---")
-st.subheader("Platform Identity Profile")
-st.caption(
-    "A radar fingerprint of each platform's content strategy — "
-    "six dimensions that define what makes it unique."
+st.divider()
+st.markdown(
+    section_header_html(
+        "Platform Identity Profile",
+        "A radar fingerprint of each platform's content strategy — six dimensions that define what makes it unique.",
+    ),
+    unsafe_allow_html=True,
 )
 
 # Controls row: platform selectors + normalized toggle
@@ -274,35 +281,44 @@ def _render_metrics_row(platform_key: str, data: dict):
     )
 
     q1, q2, q3 = st.columns(3)
+    excellent_pct = quality["tier_pcts"].get("Excellent", 0)
+    good_pct = quality["tier_pcts"].get("Good", 0)
     with q1:
-        avg_label = (
-            f"{quality['avg_imdb']:.2f}" if quality["avg_imdb"] else "N/A"
-        )
-        st.metric(
-            "Avg IMDb", avg_label,
-            help="Average IMDb rating across all rated titles on this platform",
+        avg_label = f"{quality['avg_imdb']:.2f}" if quality["avg_imdb"] else "N/A"
+        st.markdown(
+            styled_metric_card_html(
+                "Avg IMDb", avg_label, accent_color=p_color,
+                help_text="Average IMDb rating across all rated titles on this platform",
+            ),
+            unsafe_allow_html=True,
         )
     with q2:
-        excellent_pct = quality["tier_pcts"].get("Excellent", 0)
-        good_pct = quality["tier_pcts"].get("Good", 0)
         if normalized:
-            st.metric(
-                "Premium Content",
-                f"{excellent_pct + good_pct:.1f}%",
-                help="Excellent (8+) + Good (7-8) combined",
+            st.markdown(
+                styled_metric_card_html(
+                    "Premium Content", f"{excellent_pct + good_pct:.1f}%", accent_color=p_color,
+                    help_text="Excellent (8+) + Good (7-8) combined",
+                ),
+                unsafe_allow_html=True,
             )
         else:
             premium_count = quality["tier_counts"].get("Excellent", 0) + quality["tier_counts"].get("Good", 0)
-            st.metric(
-                "Premium Titles",
-                f"{premium_count:,}",
-                help="Excellent (8+) + Good (7-8) combined",
+            st.markdown(
+                styled_metric_card_html(
+                    "Premium Titles", f"{premium_count:,}", accent_color=p_color,
+                    help_text="Excellent (8+) + Good (7-8) combined",
+                ),
+                unsafe_allow_html=True,
             )
     with q3:
-        st.metric(
-            "Rated Titles",
-            f"{quality['total_rated']:,} / {quality['total_titles']:,}",
-            help="How many titles have an IMDb rating vs total catalog size",
+        st.markdown(
+            styled_metric_card_html(
+                "Rated Titles",
+                f"{quality['total_rated']:,} / {quality['total_titles']:,}",
+                accent_color=p_color,
+                help_text="How many titles have an IMDb rating vs total catalog size",
+            ),
+            unsafe_allow_html=True,
         )
 
 
@@ -359,11 +375,13 @@ else:
 # SECTION 2: CONTENT LANDSCAPE
 # ==============================================================================
 
-st.markdown("---")
-st.subheader("Content Landscape")
-st.caption(
-    "A density map of streaming content — where each platform's titles "
-    "cluster by thematic and genre similarity."
+st.divider()
+st.markdown(
+    section_header_html(
+        "Content Landscape",
+        "A density map of streaming content — where each platform's titles cluster by thematic and genre similarity.",
+    ),
+    unsafe_allow_html=True,
 )
 
 try:
@@ -641,7 +659,7 @@ if umap_coords is not None:
                 sel_data = landscape[landscape["cluster"] == sel_cid]
 
                 # Neighborhood header with description
-                st.markdown("---")
+                st.divider()
                 st.markdown(
                     f'<div style="background:{CARD_BG};border:1px solid {CARD_BORDER};'
                     f'border-radius:10px;padding:16px 20px;margin-bottom:12px;">'
@@ -727,30 +745,42 @@ if umap_coords is not None:
 
                 # Quality metrics row
                 m1, m2, m3, m4 = st.columns(4)
+                rated_in_cluster = sel_data.dropna(subset=["imdb_score"])
+                premium = rated_in_cluster[rated_in_cluster["imdb_score"] >= 7.0]
+                prem_pct = len(premium) / len(rated_in_cluster) * 100 if len(rated_in_cluster) > 0 else 0
+                med_year = int(sel_data["release_year"].median()) if sel_data["release_year"].notna().any() else "N/A"
                 with m1:
-                    st.metric(
-                        "Titles", f"{sel_summary['size']:,}",
-                        help="Total titles in this content neighborhood",
+                    st.markdown(
+                        styled_metric_card_html(
+                            "Titles", f"{sel_summary['size']:,}",
+                            help_text="Total titles in this content neighborhood",
+                        ),
+                        unsafe_allow_html=True,
                     )
                 with m2:
                     avg_label = f"{sel_summary['avg_imdb']:.2f}" if sel_summary["avg_imdb"] else "N/A"
-                    st.metric(
-                        "Avg IMDb", avg_label,
-                        help="Average IMDb rating of rated titles in this neighborhood",
+                    st.markdown(
+                        styled_metric_card_html(
+                            "Avg IMDb", avg_label,
+                            help_text="Average IMDb rating of rated titles in this neighborhood",
+                        ),
+                        unsafe_allow_html=True,
                     )
                 with m3:
-                    rated_in_cluster = sel_data.dropna(subset=["imdb_score"])
-                    premium = rated_in_cluster[rated_in_cluster["imdb_score"] >= 7.0]
-                    prem_pct = len(premium) / len(rated_in_cluster) * 100 if len(rated_in_cluster) > 0 else 0
-                    st.metric(
-                        "Premium (7.0+)", f"{prem_pct:.1f}%",
-                        help="Percentage of rated titles scoring 7.0 or higher on IMDb",
+                    st.markdown(
+                        styled_metric_card_html(
+                            "Premium (7.0+)", f"{prem_pct:.1f}%",
+                            help_text="Percentage of rated titles scoring 7.0 or higher on IMDb",
+                        ),
+                        unsafe_allow_html=True,
                     )
                 with m4:
-                    med_year = int(sel_data["release_year"].median()) if sel_data["release_year"].notna().any() else "N/A"
-                    st.metric(
-                        "Median Year", med_year,
-                        help="The middle release year — half the titles are older, half newer",
+                    st.markdown(
+                        styled_metric_card_html(
+                            "Median Year", str(med_year),
+                            help_text="The middle release year — half the titles are older, half newer",
+                        ),
+                        unsafe_allow_html=True,
                     )
 
                 # Platform breakdown bar
@@ -851,11 +881,13 @@ if umap_coords is not None:
 # SECTION 3: WHAT PLATFORM ARE YOU? — Hybrid Quiz
 # ==============================================================================
 
-st.markdown("---")
-st.subheader("What Platform Are You?")
-st.caption(
-    "Pick your favorite genres, swipe through title cards, "
-    "and discover which streaming platform is your perfect match."
+st.divider()
+st.markdown(
+    section_header_html(
+        "What Platform Are You?",
+        "Pick your favorite genres, swipe through title cards, and discover which streaming platform is your perfect match.",
+    ),
+    unsafe_allow_html=True,
 )
 
 # Session state for quiz flow
@@ -1231,9 +1263,11 @@ elif _quiz_phase == "C":
 
 # -- footer --------------------------------------------------------------------
 
-st.markdown("---")
-st.caption(
-    "Hypothetical merger for academic analysis. "
-    "Data is a snapshot (mid-2023). "
-    "All insights are illustrative, not prescriptive."
+st.markdown(
+    '<div style="border-top:1px solid #333;padding:16px 0;color:#666;'
+    'font-size:0.8em;text-align:center;">'
+    'Hypothetical merger for academic analysis. Data is a snapshot (mid-2023). '
+    'All insights are illustrative, not prescriptive.'
+    '</div>',
+    unsafe_allow_html=True,
 )

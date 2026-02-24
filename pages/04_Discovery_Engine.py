@@ -20,6 +20,7 @@ from src.config import (
     CARD_TEXT_MUTED,
     SIMILARITY_MIN_IMDB,
 )
+from src.ui.badges import section_header_html, styled_banner_html
 from src.data.loaders import (
     deduplicate_titles,
     get_titles_for_view,
@@ -43,8 +44,14 @@ from src.ui.session import init_session_state
 st.set_page_config(page_title="Discovery Engine", page_icon="📊", layout="wide")
 init_session_state()
 
-st.title("Discovery Engine")
-st.caption("Your full recommendation toolkit — find your next favorite title through three distinct approaches.")
+st.markdown(
+    section_header_html(
+        "Discovery Engine",
+        "Your full recommendation toolkit — find your next favorite title through three distinct approaches.",
+        font_size="2em",
+    ),
+    unsafe_allow_html=True,
+)
 
 # ─── Sidebar ────────────────────────────────────────────────────────────────
 raw_df = get_titles_for_view(st.session_state.get("platform_view", "merged"))
@@ -89,14 +96,14 @@ def _render_rec_card(row, idx, show_explanation=False):
     genre_pills = ""
     if isinstance(genres, (list,)):
         genre_pills = " ".join(
-            f'<span style="background:#2a2a3e;padding:2px 6px;border-radius:3px;'
+            f'<span style="background:{CARD_BG};border:1px solid {CARD_BORDER};padding:2px 6px;border-radius:3px;'
             f'font-size:0.7rem;margin-right:3px;">{g}</span>'
             for g in genres[:4]
         )
 
     st.markdown(f"""
-    <div style="background:{CARD_BG};border:1px solid {CARD_BORDER};border-radius:8px;
-                padding:12px 16px;margin-bottom:8px;">
+    <div style="background:{CARD_BG};border:1px solid {CARD_BORDER};border-top:3px solid {CARD_ACCENT};
+                border-radius:8px;padding:12px 16px;margin-bottom:8px;">
         <div style="display:flex;justify-content:space-between;align-items:center;">
             <div>
                 <span style="font-size:1rem;font-weight:600;color:{CARD_TEXT};">{title}</span>
@@ -135,8 +142,13 @@ tab1, tab2, tab3, tab_history = st.tabs([
 
 # ─── Tab 1: Similar to a Title ──────────────────────────────────────────────
 with tab1:
-    st.subheader("Find titles similar to one you love")
-    st.caption("Enhanced similarity with genre overlap, vibe tag matching, and shared crew explanations.")
+    st.markdown(
+        section_header_html(
+            "Find titles similar to one you love",
+            "Enhanced similarity with genre overlap, vibe tag matching, and shared crew explanations.",
+        ),
+        unsafe_allow_html=True,
+    )
 
     col_search, col_scope, col_count = st.columns([3, 1, 1])
     with col_search:
@@ -172,7 +184,7 @@ with tab1:
                     )
 
                 if results:
-                    st.success(f"Found {len(results)} similar titles")
+                    st.markdown(styled_banner_html("✓", f"Found {len(results)} similar titles", bg="rgba(46,204,113,0.1)", border_color="#2ecc71"), unsafe_allow_html=True)
                     for i, r in enumerate(results):
                         _render_rec_card(r, i, show_explanation=True)
 
@@ -192,8 +204,13 @@ with tab1:
 
 # ─── Tab 2: Preference-Based ────────────────────────────────────────────────
 with tab2:
-    st.subheader("Recommendations based on your preferences")
-    st.caption("Tell us what you like, and we'll find the best matches in the catalog.")
+    st.markdown(
+        section_header_html(
+            "Recommendations based on your preferences",
+            "Tell us what you like, and we'll find the best matches in the catalog.",
+        ),
+        unsafe_allow_html=True,
+    )
 
     col_left, col_right = st.columns(2)
 
@@ -244,7 +261,7 @@ with tab2:
             )
 
         if not results.empty:
-            st.success(f"Found {len(results)} recommendations")
+            st.markdown(styled_banner_html("✓", f"Found {len(results)} recommendations", bg="rgba(46,204,113,0.1)", border_color="#2ecc71"), unsafe_allow_html=True)
             for i, (_, row) in enumerate(results.iterrows()):
                 _render_rec_card(row.to_dict(), i)
                 if "why_match" in row and pd.notna(row["why_match"]):
@@ -263,8 +280,13 @@ with tab2:
 
 # ─── Tab 3: Vibe Search ─────────────────────────────────────────────────────
 with tab3:
-    st.subheader("Vibe Search")
-    st.caption("Describe what you're in the mood for, and we'll find it using NLP-powered semantic matching.")
+    st.markdown(
+        section_header_html(
+            "Vibe Search",
+            "Describe what you're in the mood for, and we'll find it using NLP-powered semantic matching.",
+        ),
+        unsafe_allow_html=True,
+    )
 
     vibe_query = st.text_area(
         "What are you in the mood for?",
@@ -288,7 +310,7 @@ with tab3:
         signals = extract_vibe_signals(vibe_query)
         if signals:
             signal_pills = " ".join(
-                f'<span style="background:#2a2a3e;border:1px solid {CARD_ACCENT};'
+                f'<span style="background:{CARD_BG};border:1px solid {CARD_ACCENT};'
                 f'padding:3px 10px;border-radius:12px;font-size:0.8rem;margin:2px;">{s}</span>'
                 for s in signals
             )
@@ -314,7 +336,7 @@ with tab3:
             )
 
         if not results.empty:
-            st.success(f"Found {len(results)} matching titles")
+            st.markdown(styled_banner_html("✓", f"Found {len(results)} matching titles", bg="rgba(46,204,113,0.1)", border_color="#2ecc71"), unsafe_allow_html=True)
 
             # Highlight matched tags for each result
             for i, (_, row) in enumerate(results.iterrows()):
@@ -326,7 +348,7 @@ with tab3:
                     matched = [t for t in top_tags if any(s.lower() in t.lower() for s in signals)]
                     if matched:
                         tag_html = " ".join(
-                            f'<span style="background:#1a3a1a;border:1px solid #4a4;'
+                            f'<span style="background:rgba(46,204,113,0.1);border:1px solid #2ecc71;'
                             f'padding:1px 6px;border-radius:3px;font-size:0.7rem;">{t}</span>'
                             for t in matched[:5]
                         )
@@ -362,8 +384,13 @@ with tab3:
 
 # ─── Tab 4: History ─────────────────────────────────────────────────────────
 with tab_history:
-    st.subheader("Recommendation History")
-    st.caption("Your last 10 recommendation sessions.")
+    st.markdown(
+        section_header_html(
+            "Recommendation History",
+            "Your last 10 recommendation sessions.",
+        ),
+        unsafe_allow_html=True,
+    )
 
     if not st.session_state.rec_history:
         st.info("No recommendations yet. Try one of the tabs above!")
@@ -387,16 +414,18 @@ with tab_history:
                     mark = entry.get("mark")
                     if mark:
                         st.caption(f"Marked: {mark}")
-                st.markdown("---")
+                st.divider()
 
         if st.button("Clear History"):
             st.session_state.rec_history = []
             st.rerun()
 
 # ─── Footer ─────────────────────────────────────────────────────────────────
-st.markdown("---")
-st.caption(
-    "Hypothetical merger for academic analysis. Data is a snapshot (mid-2023). "
-    "Enrichment data: IMDb datasets, Wikidata, MovieLens 20M, TMDB API. "
-    "Enrichment field coverage varies by title — see data_confidence."
+st.markdown(
+    '<div style="border-top:1px solid #333;padding:16px 0;color:#666;'
+    'font-size:0.8em;text-align:center;">'
+    'Hypothetical merger for academic analysis. Data is a snapshot (mid-2023). '
+    'All insights are illustrative, not prescriptive.'
+    '</div>',
+    unsafe_allow_html=True,
 )

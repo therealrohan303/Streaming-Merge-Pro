@@ -42,37 +42,47 @@ from src.analysis.strategic import (
     compute_overlap_analysis,
     compute_overlap_heatmap,
 )
+from src.ui.badges import section_header_html, styled_metric_card_html, styled_banner_html
 from src.ui.session import init_session_state
 
 st.set_page_config(page_title="Strategic Insights", page_icon="📊", layout="wide")
 init_session_state()
 
-st.title("Strategic Insights")
-st.caption("Merger business intelligence with decision traces and evidence-based recommendations.")
+st.markdown(
+    section_header_html(
+        "Strategic Insights",
+        "Merger business intelligence with decision traces and evidence-based recommendations.",
+        font_size="2em",
+    ),
+    unsafe_allow_html=True,
+)
 
 # ─── Data Loading ───────────────────────────────────────────────────────────
 titles = load_enriched_titles()
 
 # ─── Section 1: Merger Value Dashboard ──────────────────────────────────────
-st.header("Merger Value Dashboard")
-st.caption("Headline metrics quantifying the strategic value of the Netflix + Max merger.")
+st.markdown(
+    section_header_html("Merger Value Dashboard", "Headline metrics quantifying the strategic value of the Netflix + Max merger."),
+    unsafe_allow_html=True,
+)
 
 kpis = compute_merger_kpis(titles)
 
 cols = st.columns(len(kpis))
 for i, (key, kpi) in enumerate(kpis.items()):
     with cols[i]:
-        st.metric(
-            label=kpi["label"],
-            value=kpi["value"],
-            help=kpi["detail"],
+        st.markdown(
+            styled_metric_card_html(kpi["label"], kpi["value"], help_text=kpi["detail"]),
+            unsafe_allow_html=True,
         )
 
-st.markdown("---")
+st.divider()
 
 # ─── Section 2: Prestige Index ──────────────────────────────────────────────
-st.header("Prestige Index")
-st.caption("Award wins per 1,000 titles by platform and genre — measures prestige content concentration.")
+st.markdown(
+    section_header_html("Prestige Index", "Award wins per 1,000 titles by platform and genre — measures prestige content concentration."),
+    unsafe_allow_html=True,
+)
 
 prestige_path = PRECOMPUTED_DIR / "strategic_analysis" / "prestige_index.parquet"
 if prestige_path.exists():
@@ -82,7 +92,7 @@ if prestige_path.exists():
     award_coverage = titles["award_wins"].notna().mean() if "award_wins" in titles.columns else 0
 
     if award_coverage >= WIKIDATA_MIN_COVERAGE:
-        st.info(f"Prestige Index (Wikidata, {award_coverage:.0%} coverage)")
+        st.markdown(styled_banner_html("ℹ️", f"Prestige Index (Wikidata, {award_coverage:.0%} coverage)"), unsafe_allow_html=True)
 
         # Bar chart: platforms ranked by overall prestige
         platform_prestige = (
@@ -128,8 +138,10 @@ if prestige_path.exists():
             ].copy()
             if len(roi_data) > 20:
                 roi_data["roi_proxy"] = roi_data["box_office_usd"] / roi_data["budget_usd"]
-                st.subheader("ROI Proxy")
-                st.caption("Estimated ROI proxy (Wikidata, partial coverage) — box office / budget")
+                st.markdown(
+                    section_header_html("ROI Proxy", "Estimated ROI proxy (Wikidata, partial coverage) — box office / budget"),
+                    unsafe_allow_html=True,
+                )
                 platform_roi = (
                     roi_data.groupby("platform")["roi_proxy"]
                     .agg(["median", "count"])
@@ -149,11 +161,13 @@ if prestige_path.exists():
 else:
     st.info("Prestige index data not found. Run `scripts/11_precompute_strategic.py` first.")
 
-st.markdown("---")
+st.divider()
 
 # ─── Section 3: Content Overlap Analysis ────────────────────────────────────
-st.header("Content Overlap Analysis")
-st.caption("Mapping where Netflix and Max duplicate vs complement each other.")
+st.markdown(
+    section_header_html("Content Overlap Analysis", "Mapping where Netflix and Max duplicate vs complement each other."),
+    unsafe_allow_html=True,
+)
 
 overlap = compute_overlap_analysis(titles)
 if not overlap.empty:
@@ -166,15 +180,21 @@ if not overlap.empty:
 
     # Summary metrics
     m1, m2, m3 = st.columns(3)
+    high_overlap_count = len(overlap[overlap["confidence"] > 0.5])
     with m1:
-        st.metric("Genre-Type Combinations", f"{total_combos}")
+        st.markdown(styled_metric_card_html("Genre-Type Combinations", f"{total_combos}"), unsafe_allow_html=True)
     with m2:
-        high_overlap_count = len(overlap[overlap["confidence"] > 0.5])
-        st.metric("High Overlap Pairs", f"{high_overlap_count}",
-                  help="Genre-type combos where both platforms have similar content volume")
+        st.markdown(
+            styled_metric_card_html("High Overlap Pairs", f"{high_overlap_count}",
+                                    help_text="Genre-type combos where both platforms have similar content volume"),
+            unsafe_allow_html=True,
+        )
     with m3:
-        st.metric("Complementarity Score", f"{complementarity_pct:.0%}",
-                  help="Percentage of genre-type combos with low overlap — higher = more complementary")
+        st.markdown(
+            styled_metric_card_html("Complementarity Score", f"{complementarity_pct:.0%}",
+                                    help_text="Percentage of genre-type combos with low overlap — higher = more complementary"),
+            unsafe_allow_html=True,
+        )
 
     if not heatmap_data.empty:
         # Stacked bar showing Netflix-exclusive, overlap, and Max-exclusive per genre
@@ -226,23 +246,34 @@ if not overlap.empty:
 
     if len(high_overlap) > len(low_overlap):
         overlap_genres_str = ", ".join(top_overlapping[:3]) if top_overlapping else "multiple genres"
-        st.success(
-            f"High overlap detected in {len(high_overlap)} genre-type pairs "
-            f"(notably {overlap_genres_str}). "
-            "Strong curation opportunity to reduce redundancy and focus on quality over quantity."
+        st.markdown(
+            styled_banner_html(
+                "✓",
+                f"High overlap detected in {len(high_overlap)} genre-type pairs (notably {overlap_genres_str}). "
+                "Strong curation opportunity to reduce redundancy and focus on quality over quantity.",
+                bg="rgba(46,204,113,0.1)", border_color="#2ecc71",
+            ),
+            unsafe_allow_html=True,
         )
     else:
         comp_genres_str = ", ".join(top_complementary[:3]) if top_complementary else "multiple genres"
-        st.success(
-            f"The catalogs are largely complementary ({complementarity_pct:.0%} low-overlap). "
-            f"Max adds depth in {comp_genres_str}, maximizing genre breadth in the merged entity."
+        st.markdown(
+            styled_banner_html(
+                "✓",
+                f"The catalogs are largely complementary ({complementarity_pct:.0%} low-overlap). "
+                f"Max adds depth in {comp_genres_str}, maximizing genre breadth in the merged entity.",
+                bg="rgba(46,204,113,0.1)", border_color="#2ecc71",
+            ),
+            unsafe_allow_html=True,
         )
 
-st.markdown("---")
+st.divider()
 
 # ─── Section 4: Gap Analysis with Decision Trace ────────────────────────────
-st.header("Gap Analysis")
-st.caption("Identifying content gaps with full decision traces for strategic acquisition planning.")
+st.markdown(
+    section_header_html("Gap Analysis", "Identifying content gaps with full decision traces for strategic acquisition planning."),
+    unsafe_allow_html=True,
+)
 
 gap_col1, gap_col2 = st.columns(2)
 with gap_col1:
@@ -266,11 +297,19 @@ if not gaps.empty:
 
     g1, g2, g3 = st.columns(3)
     with g1:
-        st.metric("Total Gaps Found", len(gaps))
+        st.markdown(styled_metric_card_html("Total Gaps Found", str(len(gaps))), unsafe_allow_html=True)
     with g2:
-        st.metric("High Priority", high_gaps, help="Genres where competitors lead by 3x+ or base has <3% share")
+        st.markdown(
+            styled_metric_card_html("High Priority", str(high_gaps),
+                                    help_text="Genres where competitors lead by 3x+ or base has <3% share"),
+            unsafe_allow_html=True,
+        )
     with g3:
-        st.metric("Medium Priority", med_gaps, help="Genres where competitors lead by 1.5-3x")
+        st.markdown(
+            styled_metric_card_html("Medium Priority", str(med_gaps),
+                                    help_text="Genres where competitors lead by 1.5-3x"),
+            unsafe_allow_html=True,
+        )
 
     # Render gaps as cards
     for _, gap in gaps.iterrows():
@@ -304,11 +343,13 @@ if not gaps.empty:
 else:
     st.info("No significant gaps found for this perspective — the catalog covers all genres as well or better than competitors.")
 
-st.markdown("---")
+st.divider()
 
 # ─── Section 5: IP Synergy Map ──────────────────────────────────────────────
-st.header("IP Synergy Map")
-st.caption("Franchise and collection analysis — which IP portfolios become dominant post-merger.")
+st.markdown(
+    section_header_html("IP Synergy Map", "Franchise and collection analysis — which IP portfolios become dominant post-merger."),
+    unsafe_allow_html=True,
+)
 
 synergy_data, coverage = compute_ip_synergy(titles)
 if synergy_data is not None:
@@ -319,7 +360,7 @@ if synergy_data is not None:
     with tab_pre:
         col1, col2 = st.columns(2)
         with col1:
-            st.subheader("Netflix Top Franchises")
+            st.markdown(section_header_html("Netflix Top Franchises"), unsafe_allow_html=True)
             if not synergy_data["netflix"].empty:
                 st.dataframe(
                     synergy_data["netflix"][["franchise", "title_count", "avg_imdb", "quality_score"]],
@@ -332,7 +373,7 @@ if synergy_data is not None:
             else:
                 st.caption("No franchise data available for Netflix.")
         with col2:
-            st.subheader("Max Top Franchises")
+            st.markdown(section_header_html("Max Top Franchises"), unsafe_allow_html=True)
             if not synergy_data["max"].empty:
                 st.dataframe(
                     synergy_data["max"][["franchise", "title_count", "avg_imdb", "quality_score"]],
@@ -346,7 +387,7 @@ if synergy_data is not None:
                 st.caption("No franchise data available for Max.")
 
     with tab_post:
-        st.subheader("Merged Entity — Top 15 Franchises by Quality Score")
+        st.markdown(section_header_html("Merged Entity — Top 15 Franchises by Quality Score"), unsafe_allow_html=True)
         if not synergy_data["merged"].empty:
             fig_franchise = px.bar(
                 synergy_data["merged"].head(15),
@@ -391,11 +432,13 @@ else:
         st.info("IP Synergy Map requires TMDB enrichment data. "
                 "Run `scripts/08_enrich_tmdb.py` and `scripts/09_build_enriched_titles.py` first.")
 
-st.markdown("---")
+st.divider()
 
 # ─── Section 6: Market Impact Simulation ────────────────────────────────────
-st.header("Market Impact Simulation")
-st.caption("Simulated market based on catalog data only. Not actual financial market share.")
+st.markdown(
+    section_header_html("Market Impact Simulation", "Simulated market based on catalog data only. Not actual financial market share."),
+    unsafe_allow_html=True,
+)
 st.warning("This simulation uses catalog size as a proxy for market position. "
            "It does not represent actual subscriber counts or financial market share.")
 
@@ -495,9 +538,11 @@ with hhi_col2:
     """, unsafe_allow_html=True)
 
 # ─── Footer ─────────────────────────────────────────────────────────────────
-st.markdown("---")
-st.caption(
-    "Hypothetical merger for academic analysis. Data is a snapshot (mid-2023). "
-    "Enrichment data: IMDb datasets, Wikidata, MovieLens 20M, TMDB API. "
-    "No section overclaims financial or subscriber data."
+st.markdown(
+    '<div style="border-top:1px solid #333;padding:16px 0;color:#666;'
+    'font-size:0.8em;text-align:center;">'
+    'Hypothetical merger for academic analysis. Data is a snapshot (mid-2023). '
+    'All insights are illustrative, not prescriptive.'
+    '</div>',
+    unsafe_allow_html=True,
 )

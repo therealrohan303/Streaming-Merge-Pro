@@ -39,7 +39,7 @@ PLATFORMS = {
     },
     "merged": {
         "name": "Netflix + Max",
-        "color": "#7B1FA2",  # Purple blend
+        "color": "#00897B",  # Teal — distinct from both Netflix red and Max blue
         "text_color": "#FFFFFF",
     },
     "disney": {

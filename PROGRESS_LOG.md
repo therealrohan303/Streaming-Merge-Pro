@@ -809,3 +809,160 @@
 
 ### Blockers
 - None
+
+---
+
+## [2026-02-23] UI Polish: Home, Explore Catalog, Platform Comparisons
+
+### Done
+
+#### Shared Utilities
+- ✅ **`src/config.py`**: Changed merged entity color `#7B1FA2` → `#00897B` (teal); affects all platform badges, charts, and accent colors globally
+- ✅ **`src/ui/badges.py`**: Added 3 shared HTML helpers used across all 3 pages:
+  - `section_header_html()` — left-border accent header with bold title + muted subtitle
+  - `styled_metric_card_html()` — colored top-border card: label → value → delta badge → subtitle; supports `help_text` tooltip
+  - `styled_banner_html()` — icon + text info banner replacing plain `st.info()` calls
+
+#### Home.py
+- ✅ Replaced all `st.metric()` hero cards with `styled_metric_card_html()` — teal top-border, muted label above value, delta badge below; "Award-Winning Titles" shows `subtitle="(Wikidata)"`
+- ✅ Replaced `st.info()` merger insight callout with `styled_banner_html()`
+- ✅ Volume bar chart: added value labels on top of each bar, explicit color map (Netflix=`#E50914`, Max=`#002BE7`, Merged=`#00897B`), legend visible
+- ✅ IMDb distribution: named legend entries, distinguishable fills
+- ✅ Genre chart: x-axis labels rotated 45° with `automargin`, "Documentary" label corrected
+- ✅ Top titles: changed 4-column → 5-column grid, show top 10 (was 20), added colored quality score bar (green/amber/red), poster placeholder div with platform color + initial letter when no poster URL, "View Details" button right-aligned
+- ✅ Global Reach: 3 metric cards (Countries, International %, Top Market) moved above chart; chart full-width with teal bars and value labels; x-axis padded for label overflow
+- ✅ Navigation cards: replaced `st.page_link()` with styled HTML cards (teal left-border, icon, arrow)
+- ✅ Footer: replaced `st.caption()` with styled footer div (border-top, centered muted text)
+- ✅ All `st.markdown("---")` separators replaced with `st.divider()`
+- ✅ All section headers use `section_header_html()` with muted subtitles
+
+#### pages/01_Explore_Catalog.py
+- ✅ Pagination: consolidated from 3 rows to a single 8-column row; arrows changed from mixed Unicode blocks (`⏮ ◄ ► ⏭`) to consistent typographic family (`« ‹ › »`)
+- ✅ Compact inline filter strip below search row: Type / Year / IMDb presets / Genre / Reset
+- ✅ Selected card: changed from glow shadow to `border-left:4px solid` gold indicator
+- ✅ Detail panel: award badge styled as green pill, metadata in 2-row × 4-column grid (row 2: Rating / Runtime / Votes / Quality Score bar)
+- ✅ Descriptions: removed "Continue reading" expander — full description always shown
+- ✅ Similar titles: changed single-column list to 2-column grid; similarity badges colored by score (green ≥ 0.75, amber ≥ 0.60, gray below)
+- ✅ Cast & Crew expander: directors shown first with "Director:" label; actors in 2-column grid
+
+#### pages/02_Platform_Comparisons.py
+- ✅ Quick summary bar: replaced `st.info()` with 3 styled cards (Volume Leader, Quality Leader, Genre Leader); Genre Leader card now shows merged entity name explicitly for clarity
+- ✅ Summary table: pre-formatted numeric columns before Styler to prevent raw float display (e.g. `205.300000` → `205.3`)
+- ✅ Violin plot: fixed `yaxis_range=[0, 10]`; added reference lines at 7.0 ("Good") and 8.0 ("Excellent")
+- ✅ Market Positioning: increased right-side x-axis padding to prevent merged entity bubble clipping; added `cliponaxis=False`
+- ✅ Age certification chart: semantic color palette (mature → red tones, teen → amber, family/children → green tones, unrated → gray)
+- ✅ Genre heatmap: leader annotation uses `color="#FFD700"` (gold); all annotations use `font.family="Arial"` uniformly (was "Arial Bold" for leaders — not a valid Plotly font)
+- ✅ Genre Deep Dive top title cards: reformatted to match Explore Catalog card style (platform badge + type + IMDb + vote count)
+- ✅ Genre Deep Dive: Quality Leader badge shown on best-average-IMDb platform per selected genre
+- ✅ Strategic Insights prose: removed generic boilerplate phrases; each competitor gets data-driven framing
+- ✅ Descriptions in expanded cards: removed "Continue reading" expander — full text always shown
+
+### Files touched
+- `src/config.py` — merged color, teal accent
+- `src/ui/badges.py` — 3 new shared helpers
+- `Home.py` — all 6 sections + footer
+- `pages/01_Explore_Catalog.py` — pagination, filter strip, cards, detail panel, similar titles, cast & crew
+- `pages/02_Platform_Comparisons.py` — summary cards, table formatting, violin, positioning, age certs, heatmap, deep dive, insights
+
+### Next
+- [ ] Final integration testing of all 8 pages end-to-end
+- [ ] Mark project as feature-complete
+
+### Blockers
+- None
+
+---
+
+## [2026-02-24] Info Icon Tooltip — Iterative Fix
+
+### Done
+- ✅ **`src/ui/badges.py`** — resolved `help_text` tooltip icon in `styled_metric_card_html()` through multiple iterations:
+  - Removed `cursor:help` (was rendering as question-mark cursor, not a tooltip)
+  - Switched from HTML `title` attribute to CSS `::after` pseudo-element tooltip using `data-tip` attribute — `title` doesn't fire reliably inside Streamlit's rendering sandbox
+  - Tried `font-style:italic` letter "i" → removed (appeared as slanted stroke)
+  - Tried `font-family:Georgia,serif` letter "i" → still ambiguous vs capital "I" at small sizes
+  - Tried Unicode `ℹ` (U+2139) and `ⓘ` (U+24D8) — both rendered as capital "I" at the displayed size
+  - **Final fix**: inline SVG (`13×13 px`) drawing a circle + `?` character — pixel-perfect, font-independent, consistent across all OS/browsers
+
+### Files touched
+- `src/ui/badges.py` — tooltip icon implementation in `styled_metric_card_html()`
+
+### Blockers
+- None
+
+---
+
+## [2026-02-24] Visual Standardization: Pages 03–07
+
+### Done
+Applied the same visual UI/UX patterns from pages 00–02 uniformly across pages 03–07. No new patterns introduced — only the existing shared helpers and conventions were applied.
+
+#### Rules applied to all 5 pages
+- `st.header/subheader(X)` + `st.caption(Y)` → `st.markdown(section_header_html(X, Y), unsafe_allow_html=True)`
+- `st.metric(label, value)` KPI rows → `st.markdown(styled_metric_card_html(label, value), unsafe_allow_html=True)`
+- Substantive `st.success(...)` → `styled_banner_html("✓", ..., green)`
+- Substantive `st.info(...)` (context/insights) → `styled_banner_html("ℹ️"/"🏆", ...)`
+- `st.markdown("---")` → `st.divider()`
+- Footer `st.caption(...)` → styled footer div (border-top, centered muted text)
+- Hardcoded `#2a2a3e` / `#1a3a1a` color values → `{CARD_BG}` from config
+
+#### pages/03_Platform_DNA.py
+- Added imports: `section_header_html`, `styled_metric_card_html` from `src.ui.badges`
+- Replaced 3 `st.subheader` + `st.caption` pairs ("Platform Identity Profile", "Content Landscape", "What Platform Are You?") with `section_header_html`
+- Replaced 3× `st.metric` in `_render_metrics_row()` with `styled_metric_card_html` (platform accent color)
+- Replaced 4× `st.metric` in neighborhood quality row with `styled_metric_card_html`
+- Replaced 5× `st.markdown("---")` with `st.divider()`
+- Replaced footer
+
+#### pages/04_Discovery_Engine.py
+- Added imports: `section_header_html`, `styled_banner_html` from `src.ui.badges`
+- Fixed `_render_rec_card`: hardcoded `#2a2a3e` → `{CARD_BG}` in genre pills; added `border-top:3px solid {CARD_ACCENT}`
+- Fixed vibe signal pills and matched tag pills (hardcoded colors → config constants / semantic green)
+- Replaced 4 `st.subheader` + `st.caption` pairs with `section_header_html`
+- Replaced 3× `st.success(f"Found {n}...")` with `styled_banner_html("✓", ..., green)`
+- Replaced `st.markdown("---")` with `st.divider()`
+- Replaced footer
+
+#### pages/05_Strategic_Insights.py
+- Added imports: `section_header_html`, `styled_metric_card_html`, `styled_banner_html` from `src.ui.badges`
+- Replaced 8 `st.header/subheader` + `st.caption` pairs with `section_header_html`
+- Replaced KPI `st.metric` loop with `styled_metric_card_html` (with `help_text`)
+- Replaced overlap analysis 3× `st.metric` and gap analysis 3× `st.metric` with `styled_metric_card_html`
+- Replaced `st.info` (Prestige Index note) with `styled_banner_html("ℹ️", ...)`
+- Replaced 2× `st.success` overlap findings with `styled_banner_html("✓", ..., green)`
+- Replaced all 6 `st.markdown("---")` with `st.divider()`
+- Replaced footer
+
+#### pages/06_Interactive_Lab.py
+- Added imports: `section_header_html`, `styled_metric_card_html` from `src.ui.badges`
+- Replaced 7 `st.subheader` + `st.caption` pairs with `section_header_html`
+- Added `border-top:3px solid {CARD_ACCENT}` to budget stats box outer div
+- Replaced 6× `st.metric` (3 "Your Service" + 3 "Netflix + Max" comparison) with `styled_metric_card_html`
+- Replaced 2× `st.markdown("---")` with `st.divider()`
+- Replaced footer
+
+#### pages/07_Cast_Crew_Network.py
+- Added imports: `section_header_html`, `styled_metric_card_html`, `styled_banner_html` from `src.ui.badges`
+- Replaced `st.header("Person Search & Profile")` + `st.caption(...)` with `section_header_html`
+- Replaced `st.subheader(profile["name"])` (dynamic) with `section_header_html(profile["name"])`
+- Replaced 5× `st.metric` (Avg IMDb, Titles, Career Span, Top Genre, Role) with `styled_metric_card_html`
+- Replaced `st.info("Award-winning work...")` with `styled_banner_html("🏆", ..., bg="rgba(255,215,0,0.1)", border_color="#FFD700")`
+- Replaced `st.subheader("Top Collaborators")` and `st.subheader("Filmography")` with `section_header_html`
+- Replaced 4 `st.header/subheader` + `st.caption` pairs ("Creative Circles", "Cross-Platform Bridges", "Influence Scoring", "Rankings") with `section_header_html`
+- Replaced 4× `st.markdown("---")` with `st.divider()`
+- Replaced footer
+- Kept all diagnostic `st.info/warning` (data missing, no matches found) as native Streamlit
+
+### Files touched
+- `pages/03_Platform_DNA.py`
+- `pages/04_Discovery_Engine.py`
+- `pages/05_Strategic_Insights.py`
+- `pages/06_Interactive_Lab.py`
+- `pages/07_Cast_Crew_Network.py`
+
+### Next
+- [ ] Final integration testing of all 8 pages end-to-end
+- [ ] Mark project as feature-complete
+
+### Blockers
+- None
