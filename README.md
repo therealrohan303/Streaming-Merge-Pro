@@ -115,7 +115,7 @@ person_id, id, name, character, role
 
 ### 2. IMDb Public Datasets (Required)
 
-**Source:** https://datasets.imdbdb.com/
+**Source:** https://datasets.imdb.com/
 
 Download the following 4 files and extract them to `data/raw/imdb/`. Keep them as `.tsv.gz` — the pipeline reads gzipped files directly.
 
