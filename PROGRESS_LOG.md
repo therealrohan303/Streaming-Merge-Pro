@@ -1,5 +1,21 @@
 # Progress Log: Netflix + Max Merger Capstone
 
+## [2026-03-17] README overhaul — full data setup guide
+
+### Done
+- ✅ **README.md rewritten** — replaced placeholder README with a comprehensive data setup and pipeline guide covering all 12 raw data sources, download instructions (IMDb, MovieLens 20M, TMDB API, platform CSVs), step-by-step pipeline reference for all 12 scripts (inputs, outputs, transformations, time/memory notes), full `data/` directory tree after pipeline completion, and troubleshooting section
+- ✅ **IMDb URL corrected** — fixed typo `datasets.imdbdb.com` → `datasets.imdb.com`
+- ✅ All changes pushed to GitHub (`main` branch)
+
+### Files changed
+- `README.md`
+
+### Next
+- [ ] Final integration testing of all 8 pages end-to-end
+- [ ] Mark project as feature-complete
+
+---
+
 ## [2026-02-26] Discovery Engine — round 2 refinements
 
 ### Done
