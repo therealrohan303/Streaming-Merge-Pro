@@ -115,7 +115,7 @@ person_id, id, name, character, role
 
 ### 2. IMDb Public Datasets (Required)
 
-**Source:** https://datasets.imdb.com/
+**Source:** https://datasets.imdbws.com/ 
 
 Download the following 4 files and extract them to `data/raw/imdb/`. Keep them as `.tsv.gz` — the pipeline reads gzipped files directly.
 
@@ -127,7 +127,7 @@ Download the following 4 files and extract them to `data/raw/imdb/`. Keep them a
 | `title.ratings.tsv.gz` | ~8 MB | IMDb average rating and vote count |
 
 **Steps:**
-1. Go to https://datasets.imdb.com/
+1. Go to https://datasets.imdbws.com/
 2. Download each `.tsv.gz` file listed above
 3. Place them in `data/raw/imdb/` — do **not** extract them
 
