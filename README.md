@@ -78,7 +78,7 @@ The `data/` directory is not included in this repository. You must acquire and p
 
 ### 1. Platform Catalogs (Required)
 
-You need **12 CSV files** — one titles file and one credits file for each of the 6 platforms. These come from the [JustWatch / Kaggle streaming catalogs dataset](https://www.kaggle.com/datasets/victorsoeiro/netflix-tv-shows-and-movies) (and equivalent datasets for each platform, all mid-2023 snapshots).
+You need **12 CSV files** — one titles file and one credits file for each of the 6 platforms. These come from the [JustWatch / Kaggle streaming catalogs dataset](https://www.kaggle.com/dgoenrique/datasets) (and equivalent datasets for each platform, all mid-2023 snapshots).
 
 **Files to place in `data/raw/`:**
 
