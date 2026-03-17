@@ -187,7 +187,7 @@ DNA_MATCHER_SLIDER_WEIGHT = 0.70  # Combined weight for 6 slider dimensions
 
 # Platform Quiz
 QUIZ_N_TITLES = 10         # Titles to show in swipe phase
-QUIZ_MAX_PER_PLATFORM = 2  # Platform diversity constraint
+QUIZ_MAX_PER_PLATFORM = 3  # Platform diversity constraint (3 per platform = 18 slots for 6 platforms)
 QUIZ_MIN_VOTES = 5000      # Minimum votes for quiz title candidates
 
 # =============================================================================

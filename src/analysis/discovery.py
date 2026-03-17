@@ -1,9 +1,10 @@
 """Analysis functions for the Discovery Engine page (Page 4).
 
-Three recommendation modes:
+Four recommendation modes:
   1. Similar to a title (enhanced similarity with why-similar explainer)
-  2. Preference-based (genre, quality, type, runtime, year, popularity)
+  2. Mood Board (mood-tile based matching via genome tags + TMDB keywords)
   3. Vibe search (NLP semantic + keyword matching + genome hybrid)
+  4. Preference-based (legacy, kept for reference)
 """
 
 import numpy as np
@@ -18,10 +19,98 @@ from src.config import (
     HYBRID_QUALITY_WEIGHT,
 )
 
+# ─── Mood Board Configuration ────────────────────────────────────────────────
+
+MOOD_TILES = [
+    {
+        "emoji": "⚡", "label": "Edge of your seat",
+        "genome_tags": ["suspenseful", "tense", "nail-biting", "gripping", "thrilling"],
+        "tmdb_kws": ["suspense", "thriller", "tension", "thrill"],
+    },
+    {
+        "emoji": "😢", "label": "Ugly cry",
+        "genome_tags": ["tearjerker", "emotional", "moving", "heart wrenching", "sad", "touching"],
+        "tmdb_kws": ["emotional", "tragedy", "tearjerker", "grief"],
+    },
+    {
+        "emoji": "😊", "label": "Feel-good and warm",
+        "genome_tags": ["feel-good", "heartwarming", "uplifting", "optimistic", "cheerful", "warm"],
+        "tmdb_kws": ["feel-good", "heartwarming", "feel good", "uplifting", "feel good film"],
+    },
+    {
+        "emoji": "🌀", "label": "Mind-bending",
+        "genome_tags": ["mind bending", "psychological", "surreal", "thought provoking", "cerebral", "complex narrative"],
+        "tmdb_kws": ["mindbender", "psychological", "mind-bender", "nonlinear narrative"],
+    },
+    {
+        "emoji": "🏔️", "label": "Epic adventure",
+        "genome_tags": ["epic", "adventure", "grand", "spectacular", "journey", "quest"],
+        "tmdb_kws": ["epic", "adventure", "quest", "epic journey"],
+    },
+    {
+        "emoji": "🌑", "label": "Dark and unsettling",
+        "genome_tags": ["dark", "disturbing", "unsettling", "bleak", "gritty", "sinister", "dark themes"],
+        "tmdb_kws": ["dark", "disturbing", "psychological horror", "dark comedy", "nihilism"],
+    },
+    {
+        "emoji": "😂", "label": "Laugh out loud",
+        "genome_tags": ["funny", "hilarious", "comedy", "humor", "witty", "slapstick", "satirical"],
+        "tmdb_kws": ["comedy", "humor", "funny", "satire", "parody"],
+    },
+    {
+        "emoji": "🕯️", "label": "Slow burn",
+        "genome_tags": ["slow burn", "slow-burn", "atmospheric", "meditative", "deliberate pacing"],
+        "tmdb_kws": ["slow burn", "atmospheric", "slow paced"],
+    },
+    {
+        "emoji": "🏆", "label": "Inspiring true story",
+        "genome_tags": ["inspirational", "based on true story", "uplifting", "real events", "biography"],
+        "tmdb_kws": ["based on true story", "biography", "inspirational", "based on a true story"],
+    },
+    {
+        "emoji": "📼", "label": "Nostalgia trip",
+        "genome_tags": ["nostalgic", "retro", "classic", "old school", "period piece"],
+        "tmdb_kws": ["nostalgia", "retro", "80s", "90s", "period piece"],
+    },
+    {
+        "emoji": "❤️", "label": "Love story",
+        "genome_tags": ["romance", "love story", "romantic", "relationship", "love"],
+        "tmdb_kws": ["romance", "love story", "romantic", "love", "romantic comedy"],
+    },
+    {
+        "emoji": "🔍", "label": "Mystery unraveling",
+        "genome_tags": ["mystery", "whodunit", "detective", "puzzle", "twists", "investigation"],
+        "tmdb_kws": ["mystery", "whodunit", "detective", "investigation"],
+    },
+    {
+        "emoji": "💥", "label": "Action-packed",
+        "genome_tags": ["action", "exciting", "fast paced", "explosive", "high octane"],
+        "tmdb_kws": ["action", "action hero", "fight", "action thriller"],
+    },
+    {
+        "emoji": "🧠", "label": "Thought-provoking",
+        "genome_tags": ["thought provoking", "philosophical", "deep", "meaningful", "social commentary"],
+        "tmdb_kws": ["philosophical", "thought-provoking", "social commentary", "meditation"],
+    },
+    {
+        "emoji": "👨‍👩‍👧", "label": "Family night",
+        "genome_tags": ["family", "family friendly", "wholesome", "for kids", "all ages"],
+        "tmdb_kws": ["family", "family film", "animation", "family friendly"],
+    },
+    {
+        "emoji": "💎", "label": "Hidden gem",
+        "genome_tags": ["underrated", "overlooked", "cult classic", "hidden gem", "cult"],
+        "tmdb_kws": ["cult", "underrated", "cult film"],
+    },
+]
+
+# Build a lookup dict for fast access by label
+MOOD_TILE_BY_LABEL = {t["label"]: t for t in MOOD_TILES}
+
 
 def get_similar_with_explanation(
     title_id, titles_df, sim_df, credits_df=None, principals_df=None,
-    enriched_df=None, scope="merged", top_k=10, min_imdb=6.0,
+    enriched_df=None, scope="merged", top_k=10, min_imdb=6.0, min_votes=0,
 ):
     """Get similar titles with detailed 'why similar?' explanation.
 
@@ -32,7 +121,7 @@ def get_similar_with_explanation(
 
     similar = get_similar_titles(
         title_id, sim_df, titles_df,
-        top_k=top_k, min_imdb=min_imdb,
+        top_k=top_k, min_imdb=min_imdb, min_votes=min_votes,
     )
 
     if similar.empty:
@@ -238,6 +327,7 @@ def vibe_search(
     query_text, titles_df, desc_embeddings=None, desc_id_map=None,
     genome_vectors=None, genome_id_map=None, enriched_df=None,
     embed_model=None, scope="merged", top_k=15, min_imdb=None, year_range=None,
+    min_votes=0,
 ):
     """Hybrid vibe search combining semantic + keyword + genome + quality + awards.
 
@@ -251,6 +341,8 @@ def vibe_search(
     # Apply optional filters
     if min_imdb:
         df = df[df["imdb_score"] >= min_imdb]
+    if min_votes and "imdb_votes" in df.columns:
+        df = df[df["imdb_votes"] >= min_votes]
     if year_range:
         df = df[(df["release_year"] >= year_range[0]) & (df["release_year"] <= year_range[1])]
 
@@ -375,3 +467,103 @@ def vibe_search(
 
     result = df.nlargest(top_k, "vibe_score")
     return result, signals
+
+
+def mood_board_recommendations(
+    titles_df, selected_mood_labels, content_type="Both",
+    top_k=20, enriched_df=None, min_imdb=6.0, min_votes=0,
+):
+    """Match titles to selected mood tiles using genome tags, TMDB keywords, and quality.
+
+    Args:
+        selected_mood_labels: list of mood label strings (from MOOD_TILES)
+        content_type: "Both", "Movie", or "Show"
+        enriched_df: titles_enriched.parquet with top_tags and tmdb_keywords columns
+        min_imdb: minimum IMDb score filter (default 6.0)
+        min_votes: minimum IMDb vote count; 0 means no filter
+
+    Returns:
+        DataFrame with mood_match_pct (0–1), matched_moods (list), mood_score columns.
+    """
+    if not selected_mood_labels:
+        return pd.DataFrame()
+
+    df = titles_df.copy()
+
+    # Content type filter
+    if content_type != "Both":
+        df = df[df["type"] == content_type]
+
+    # Quality filters
+    if min_imdb and "imdb_score" in df.columns:
+        df = df[df["imdb_score"] >= min_imdb]
+    if min_votes and "imdb_votes" in df.columns:
+        df = df[df["imdb_votes"] >= min_votes]
+
+    if df.empty:
+        return pd.DataFrame()
+
+    # Build per-mood lookups: label → {genome_tags, tmdb_kws} (lowercased)
+    mood_configs = []
+    for label in selected_mood_labels:
+        tile = MOOD_TILE_BY_LABEL.get(label)
+        if tile:
+            mood_configs.append({
+                "label": label,
+                "genome_tags": {t.lower() for t in tile["genome_tags"]},
+                "tmdb_kws": {k.lower() for k in tile["tmdb_kws"]},
+                "desc_words": {w.lower() for w in label.split() if len(w) > 3},
+            })
+
+    if not mood_configs:
+        return pd.DataFrame()
+
+    # Build enrichment lookup keyed by id
+    enr_tags = {}
+    enr_kws = {}
+    if enriched_df is not None:
+        for _, erow in enriched_df.iterrows():
+            eid = erow["id"]
+            tags = erow.get("top_tags")
+            if isinstance(tags, (list, np.ndarray)):
+                enr_tags[eid] = {str(t).lower() for t in tags}
+            kws = erow.get("tmdb_keywords")
+            if isinstance(kws, (list, np.ndarray)):
+                enr_kws[eid] = {str(k).lower() for k in kws}
+
+    def _compute_mood_match(row):
+        tid = row["id"]
+        title_tags = enr_tags.get(tid, set())
+        title_kws = enr_kws.get(tid, set())
+        desc = str(row.get("description", "") or "").lower()
+
+        matched = []
+        for mc in mood_configs:
+            hit = (
+                bool(title_tags & mc["genome_tags"])
+                or bool(title_kws & mc["tmdb_kws"])
+                or any(w in desc for w in mc["desc_words"])
+            )
+            if hit:
+                matched.append(mc["label"])
+        return matched
+
+    df["matched_moods"] = df.apply(_compute_mood_match, axis=1)
+    df["mood_match_pct"] = df["matched_moods"].apply(
+        lambda m: len(m) / len(mood_configs)
+    )
+
+    # Quality score for tie-breaking
+    df["quality_score"] = compute_quality_score(df)
+    qs = df["quality_score"]
+    df["quality_norm"] = (qs - qs.min()) / (qs.max() - qs.min() + 1e-9)
+
+    # Combined sort: 60% mood match + 40% quality (quality weight raised to surface iconic titles)
+    df["mood_score"] = 0.6 * df["mood_match_pct"] + 0.4 * df["quality_norm"]
+
+    # Keep only titles that match at least one mood (unless all moods return nothing)
+    matched_df = df[df["mood_match_pct"] > 0]
+    if matched_df.empty:
+        matched_df = df  # fallback: show quality-ranked results
+
+    return matched_df.nlargest(top_k, "mood_score")

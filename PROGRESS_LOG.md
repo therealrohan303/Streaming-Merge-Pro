@@ -1,5 +1,69 @@
 # Progress Log: Netflix + Max Merger Capstone
 
+## [2026-02-26] Discovery Engine — round 2 refinements
+
+### Done
+- ✅ **Title detail panel** — each recommendation card in all 3 tabs now has an ℹ️ toggle button. Clicking opens a full detail panel below the card list (mirrors Platform DNA's inline detail): poster (180px), 2×4 metadata grid (Type, Year, IMDb, Platforms / Rating, Runtime, Votes, Quality Score), award badge, box office, genre pills, description, Cast & Crew expander, "Open in Explore Catalog" link. Clicking ▼ or the close button dismisses the panel. Uses `discovery_detail_id` session state.
+- ✅ **Vote threshold** — added `min_votes: int = 0` parameter to `get_similar_titles()`, `get_similar_with_explanation()`, `vibe_search()`, `mood_board_recommendations()`. All page call sites pass `min_votes=1000`, filtering out titles with fewer than 1,000 IMDb votes.
+- ✅ **Mood Board quality weight raised** — `mood_score` formula changed from `0.7 × mood_match + 0.3 × quality` to `0.6 × mood_match + 0.4 × quality`. Higher quality weight surfaces iconic/popular titles (e.g. romcoms like "How to Lose a Guy in 10 Days") over obscure keyword matches.
+- ✅ **Scope bug fixed** — Title Match now correctly passes `load_merged_titles()` when scope = "Merged" and `load_all_platforms_titles()` when scope = "All Platforms". Previously always passed the full 25K-title pool regardless of scope.
+- ✅ **History tab revamped** — removed session-level "Watched / Interested / Not for me" feedback buttons (nonsensical for a list of 15 recommendations). Replaced with a clean read-only "Recent Searches" log: per-entry ✕ remove button (keyed by unique `_id`), tab-type icon (🔍 🎭 ✨), poster thumbnail strip, group-by toggle (Chronological / By Tab Type), Clear All button.
+
+### Files changed
+- `src/analysis/similarity.py` — added `min_votes` param to `get_similar_titles()`
+- `src/analysis/discovery.py` — added `min_votes` to 3 functions; raised Mood Board quality weight 0.3→0.4
+- `pages/04_Discovery_Engine.py` — detail panel (`_meta_cell`, `_render_title_detail`), scope fix, vote thresholds, history redesign
+
+### Next
+- [ ] Review remaining pages for card/visual inconsistencies
+- [ ] Continue with any new tasks
+
+## [2026-02-26] Discovery Engine full revamp
+
+### Done
+- ✅ **Tab 1: Title Match** — replaced clunky two-step search (text_input → dropdown → button) with smart autocomplete: inline poster thumbnail + year + platform badge per result, click to select, search fires on button. Added "Surprise Me" button (random high-quality title, quality ≥ 7.0, votes ≥ 5K).
+- ✅ **Why similar? expander rebuilt** — now shows 4 labeled rows: Narrative Similarity (%, note), Genre Alignment (n of n overlap with genre list), Shared Crew (name + role for up to 3 people), Shared Vibe Tags (pills). No longer dumps raw genre list — feels like a human editor wrote it.
+- ✅ **Tab 2: Mood Board** — completely replaced the generic Preference-Based tab. 16 mood tiles in 4×4 grid (emoji + label), each mapped to MovieLens genome tags + TMDB keywords. Content type + platform scope controls. Results show Mood Match % badge and matched mood tag pills below each card. Backend: `mood_board_recommendations()` added to `src/analysis/discovery.py`; `MOOD_TILES` + `MOOD_TILE_BY_LABEL` constants defined.
+- ✅ **Tab 3: Vibe Search** — fixed default min IMDb 0.0 → 6.5 (eliminates Scooby-Doo / Viking Wolf / Rip Tide from results). Optional filters now open by default. Detected themes display rebuilt as styled pills with 🏷️ header + explanatory note. Vibe score replaced with relative label: "Strong match" / "Good match" / "Partial match" (rank percentile within results). "How Vibe Search works" expander now shows a proper info card with 5-component bar chart visualization instead of raw bullet list.
+- ✅ **Tab 4: History** — fixed vertically-stacked word-wrapping buttons: now 3 compact icon buttons (🔖 ✓ ✕) side by side with tooltips; mark shows as colored text after click. Added group-by toggle (Chronological / By Tab Type). Added thumbnail strip (first 3 result posters, 42px). Added consecutive-duplicate suppression (same type+query increments count_runs instead of inserting duplicate). Moved Clear History to top alongside toggle.
+- ✅ **Unified poster card** across all tabs: `_render_rec_card()` renders poster-left layout (90×130px poster or platform-colored placeholder with initial), title+year, platform badges, IMDb+votes, genre pills, tab-specific score badge (similarity % colored pill / mood % / vibe label). Same layout everywhere — no tab has a different card structure.
+- ✅ **History thumbnail storage** — each history entry now stores `result_poster_urls` (first 3 poster URLs) captured at search time for display in History tab.
+- ✅ **History deduplication** — `_add_to_history()` helper checks if top of history has same type+query; if so, increments `count_runs` instead of inserting duplicate.
+
+### Files changed
+- `pages/04_Discovery_Engine.py` — full rewrite
+- `src/analysis/discovery.py` — added `MOOD_TILES`, `MOOD_TILE_BY_LABEL`, `mood_board_recommendations()`
+
+### Next
+- [ ] Review remaining pages for card/visual inconsistencies
+- [ ] Continue with any new tasks
+
+## [2026-02-25] Platform DNA matching system rebuild (session 2)
+
+### Done
+- ✅ **Award badge fix** — "1W" → "1 win" / "3 wins" in recommendation cards
+- ✅ **Matching algorithm rebuilt** (`compute_swipe_results_v2` v3):
+  - `maturity` dimension now uses cert-based maturity (60%) + dark genre % (40%) — captures prestige-drama platforms like Max more accurately
+  - `popularity` dimension now uses median `tmdb_popularity` (real mainstream proxy) instead of IMDb quality score
+  - Slider weight increased 0.25 → 0.35 (genre spec reduced 0.40 → 0.30) — sliders now drive meaningful differentiation
+  - Result: comedy+romance+feel-good profile produces ~37 point spread (was ~3 pts) with Disney/lighter platforms ranking above Max/dark platforms
+- ✅ **Recommendation scoring rebuilt**: `quality × genre_overlap_fraction^0.7 × tone_fit` — genre_overlap_fraction penalises titles that only partially match selected genres; tone_fit=0.15 for dark/mature titles when feel-good mode active; Wolf of Wall Street no longer surfaces for a comedy+romance feel-good profile
+- ✅ **Platform Breakdown replaced** with natural-language two-sentence explanations per platform (genre coverage sentence + vibe alignment sentence dynamically generated from score components)
+- ✅ **Compare Preferences table** — fixed "Best match" badge (was rendering `&quot;` HTML entities, now uses variable interpolation)
+- ✅ Simulation verified: comedy + romance + feel-good (maturity=20) → Shrek, Will & Grace, It's a Wonderful Life in top recs; no crime dramas
+
+## [2026-02-25] Platform DNA polish pass (session 1)
+
+### Done
+- ✅ Fixed `AttributeError` on Platform DNA page (NaN in collection_name index for franchise filter)
+- ✅ Fixed `ImportError` on Platform Comparisons page (matplotlib required for background_gradient — installed)
+- ✅ **Title card uniformity** — both neighborhood top-5 and recommendation cards now use `object-fit:cover` fixed-height poster + `min-height:320px` flex layout; match Home page card pattern
+- ✅ **Algorithm v2** (`compute_swipe_results_v2`): genre-specialization score, like-precision, spread normalization, `user_selected_genres` param
+- ✅ **Personality text**, **How You Match scorecard**, initial **Platform Breakdown**, **Compare Preferences table**, **Recommendations** genre+era filter
+
+### Next
+- [ ] Review remaining pages for similar card/visual inconsistencies
+
 ## [2026-02-10] Week 1: Foundation
 
 ### Done
@@ -966,3 +1030,33 @@ Applied the same visual UI/UX patterns from pages 00–02 uniformly across pages
 
 ### Blockers
 - None
+
+## [2026-02-24] Platform DNA Comprehensive Overhaul
+
+### Done
+
+#### src/analysis/platform_dna.py
+- Updated `_ARCHETYPES` names: "Horror & Supernatural" → "Dark & Suspenseful", "Animation & Family" → "Animated & All-Ages", "Action & Epic Adventures" → "Action-Packed & Epic"
+- Added `icon` field to all trait dicts in `compute_defining_traits` (🏆 📚 ⭐ 🌱 etc.)
+- Updated `compute_defining_traits` to accept `enriched_df=None` param; added 3 new enrichment-based traits: "The Award Magnet" (cross-platform award comparison), "The Premium Producer" (avg budget_millions), "The Universe Builder" (TMDB franchise count)
+- Updated `compute_platform_comparison_data` to accept and pass `enriched_df` through to `compute_defining_traits`
+- Added `compute_enriched_platform_stats(all_df, enriched_df)` → per-platform award_wins, award_noms, wins_per_1k, avg_budget_millions, franchise_count, post_2015_pct, intl_pct
+- Added `compute_landscape_insights_v2(landscape_df, cluster_summaries)` → specific data-backed insights with platform dominance %, cluster names, Netflix+Max overlap distribution similarity, focused vs diversified platforms
+- Added `compute_neighborhood_top_titles(landscape_df, enriched_df, cluster_id, top_n)` → top N titles per neighborhood with poster_url, award_wins, box_office_usd from enriched data
+- Updated `curate_quiz_titles` to accept `enriched_df=None` param and include `poster_url`, `award_wins` in returned dicts
+- Added `compute_swipe_results_v2(liked_ids, all_titles, all_df, slider_prefs, enriched_df, enriched_stats)` → comprehensive matching: 35% genre cosine similarity + 20% platform affinity + 15% quality + 30% slider alignment (6 dims including awards); generates data-backed `why_match` bullets; includes enriched poster_url in recommendations
+
+#### pages/03_Platform_DNA.py (complete rewrite)
+- **Section 1 (Platform Identity Profile)**: radar chart + 3-metric quality row + new 4-metric enrichment row (Award Wins, Franchises, Post-2015 %, International %) + enhanced trait cards with emoji icons and enrichment data
+- **Section 2 (Content Landscape)**: data-backed insights panel with specific numbers (cluster dominance %, avg IMDb, Netflix+Max overlap %); UMAP scatter with reduced density (200/archetype base); platform highlight multiselect with opacity control (selected=full, unselected=8%); richer hover tooltips (title, platform, IMDb, year); neighborhood top-5 title cards with poster images, award badges, and inline detail panel (same format as Explore Catalog)
+- **Section 3 (Quiz — Phase A)**: 12-genre grid with primary/secondary button toggle + selection counter; 6 sliders (Era, Gems vs Blockbusters, Runtime, Tone, International, Awards vs Entertainment) with end-label annotations; movies/shows/both selector
+- **Section 3 (Quiz — Phase B)**: poster image + card layout with award badge; ❤️/👎 two-button swipe with liked counter in progress bar
+- **Section 3 (Quiz — Phase C)**: hero card (platform name + match %) + "Your Viewing DNA" panel; "Why This Match" section with specific data-backed checkmark bullets; horizontal bar chart (platform match scores); 5-title recommendation grid with poster images + inline detail panel; runner-up list with inline progress bars; "Compare to other platforms" expander with full data table
+
+### Files touched
+- `src/analysis/platform_dna.py`
+- `pages/03_Platform_DNA.py`
+
+### Next
+- [ ] Final integration testing of all 8 pages end-to-end
+- [ ] Mark project as feature-complete

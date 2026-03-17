@@ -380,7 +380,8 @@ st.markdown(
     '<div style="border-top:1px solid #333;padding:16px 0;color:#666;'
     'font-size:0.8em;text-align:center;">'
     'Hypothetical merger for academic analysis. Data is a snapshot (mid-2023). '
-    'All insights are illustrative, not prescriptive.'
+    'All insights are illustrative, not prescriptive. '
+    'Update: As of Feb 26, 2026, Netflix withdrew from this acquisition after Paramount Skydance\'s competing bid was deemed superior by the WBD board.'
     '</div>',
     unsafe_allow_html=True,
 )

@@ -13,6 +13,7 @@ def get_similar_titles(
     top_k: int = SIMILARITY_TOP_K,
     min_score: float = SIMILARITY_MIN_SCORE,
     min_imdb: float = SIMILARITY_MIN_IMDB,
+    min_votes: int = 0,
 ) -> pd.DataFrame:
     """Look up the top-K most similar titles for a given title ID.
 
@@ -25,6 +26,7 @@ def get_similar_titles(
         top_k: Maximum number of results to return.
         min_score: Minimum similarity score threshold.
         min_imdb: Minimum IMDb score for recommended titles.
+        min_votes: Minimum IMDb vote count; 0 means no filter.
 
     Returns:
         DataFrame with title metadata plus ``similarity_score`` and
@@ -58,6 +60,8 @@ def get_similar_titles(
     # Filter out low-quality recommendations
     if "imdb_score" in result.columns:
         result = result[result["imdb_score"] >= min_imdb]
+    if min_votes and "imdb_votes" in result.columns:
+        result = result[result["imdb_votes"] >= min_votes]
 
     # Take top-K by score
     result = result.nlargest(top_k, "score")
