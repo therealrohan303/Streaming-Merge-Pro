@@ -127,7 +127,7 @@ Download the following 4 files and extract them to `data/raw/imdb/`. Keep them a
 | `title.ratings.tsv.gz` | ~8 MB | IMDb average rating and vote count |
 
 **Steps:**
-1. Go to https://datasets.imdbdb.com/
+1. Go to https://datasets.imdb.com/
 2. Download each `.tsv.gz` file listed above
 3. Place them in `data/raw/imdb/` — do **not** extract them
 
