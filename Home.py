@@ -29,6 +29,7 @@ from src.data.loaders import (
     load_merged_titles,
 )
 from src.ui.badges import (
+    page_header_html,
     platform_badges_html,
     section_header_html,
     styled_banner_html,
@@ -84,10 +85,9 @@ credits_df = get_credits_for_view(filters["platform_view"])
 # ── title ────────────────────────────────────────────────────────────────────
 
 st.markdown(
-    section_header_html(
+    page_header_html(
         "Netflix + Max Merger Analysis",
         "Hypothetical merger analysis across streaming platforms",
-        font_size="2em",
     ),
     unsafe_allow_html=True,
 )

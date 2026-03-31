@@ -150,6 +150,50 @@ def platform_badge_html(platform_key: str) -> str:
     )
 
 
+def _hex_to_rgb(hex_color: str) -> str:
+    """Convert a hex color string to 'r,g,b' for use in rgba()."""
+    h = hex_color.lstrip("#")
+    if len(h) == 3:
+        h = h[0] * 2 + h[1] * 2 + h[2] * 2
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return f"{r},{g},{b}"
+
+
+def page_header_html(
+    title: str,
+    subtitle: str = "",
+    accent_color: str = "#00B4A6",
+) -> str:
+    """Render a prominent page-level title header.
+
+    Visually distinct from section_header_html — uses a gradient background,
+    larger bold title (2.4em), and a bottom accent border. Use this once per page
+    at the very top. Use section_header_html for within-page section dividers.
+
+    Usage::
+
+        st.markdown(page_header_html("Explore Catalog", "Search and discover titles"), unsafe_allow_html=True)
+    """
+    rgb = _hex_to_rgb(accent_color)
+    subtitle_html = (
+        f'<div style="font-size:0.97em;color:{CARD_TEXT_MUTED};margin-top:0.45rem;'
+        f'font-weight:400;line-height:1.45;">{subtitle}</div>'
+        if subtitle
+        else ""
+    )
+    return (
+        f'<div style="padding:1.6rem 2rem 1.4rem 2rem;margin-bottom:1.8rem;'
+        f'background:linear-gradient(135deg,rgba({rgb},0.07) 0%,rgba(30,30,46,0) 55%);'
+        f'border-bottom:2px solid {accent_color};'
+        f'border-top:1px solid rgba({rgb},0.18);'
+        f'border-radius:4px;">'
+        f'<div style="font-size:2.4em;font-weight:800;color:#FFFFFF;'
+        f'letter-spacing:-0.8px;line-height:1.05;">{title}</div>'
+        f'{subtitle_html}'
+        f'</div>'
+    )
+
+
 def platform_badges_html(platforms) -> str:
     """Render one or more platform badges as inline HTML.
 

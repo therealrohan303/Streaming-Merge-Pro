@@ -10,6 +10,8 @@ Sections:
   7. Market Impact Simulation
 """
 
+import itertools
+
 import numpy as np
 import pandas as pd
 
@@ -49,11 +51,13 @@ def compute_merger_kpis(df):
     netflix_total = len(netflix)
     weak_genres = [g for g in all_genres
                    if netflix_genres.get(g, 0) / max(netflix_total, 1) < 0.03]
-    filled_by_max = sum(1 for g in weak_genres if max_genres.get(g, 0) > 10)
+    filled_genres = [g for g in weak_genres if max_genres.get(g, 0) > 10]
+    filled_by_max = len(filled_genres)
+    filled_names = ", ".join(sorted(filled_genres)[:5])
     kpis["genre_gap_coverage"] = {
         "value": f"{filled_by_max}/{len(weak_genres)}",
         "label": "Genre Gaps Filled by Max",
-        "detail": f"Max fills {filled_by_max} of Netflix's {len(weak_genres)} weak genres",
+        "detail": f"Genres added: {filled_names}" if filled_names else f"Max fills {filled_by_max} of Netflix's {len(weak_genres)} weak genres",
     }
 
     # Content overlap rate (by genre + type matching)
@@ -114,6 +118,24 @@ def compute_merger_kpis(df):
                     "label": "Award-Winning Titles Lift",
                     "detail": f"Award wins: {int(netflix_awards)} → {int(merged_awards)} ({coverage:.0%} coverage)",
                 }
+
+    # Catalog rank among all platforms
+    from src.config import COMPETITOR_PLATFORMS
+    merged_size = len(merged)
+    comp_sizes = {p: len(df[df["platform"] == p]) for p in COMPETITOR_PLATFORMS}
+    if comp_sizes:
+        all_sizes = {**comp_sizes, "merged": merged_size}
+        sorted_platforms = sorted(all_sizes, key=all_sizes.get, reverse=True)
+        rank = sorted_platforms.index("merged") + 1
+        above = [PLATFORMS.get(p, {}).get("name", p) for p in sorted_platforms[:rank - 1]]
+        below = [PLATFORMS.get(p, {}).get("name", p) for p in sorted_platforms[rank:rank + 2]]
+        above_str = f"Behind only {', '.join(above)}." if above else "Largest catalog in streaming."
+        below_str = f" Ahead of {', '.join(below[:2])}." if below else ""
+        kpis["catalog_rank"] = {
+            "value": f"#{rank} by size",
+            "label": "Catalog Rank",
+            "detail": f"{merged_size:,} titles. {above_str}{below_str}",
+        }
 
     return kpis
 
@@ -217,20 +239,19 @@ def compute_gap_analysis(df, perspective="merged", competitor=None):
         else:
             severity = "Low"
 
-        # Box office tier
-        box_office_tier = "Unknown"
-        if "box_office_usd" in comp_genre_data.columns:
-            bo = comp_genre_data["box_office_usd"].dropna()
-            if len(bo) > 5:
-                median = bo.median()
-                if median > 200e6:
-                    box_office_tier = "High"
-                elif median > 50e6:
-                    box_office_tier = "Mid"
-                else:
-                    box_office_tier = "Low"
+        # Audience demand (from avg IMDb votes in this genre)
+        if "imdb_votes" in base_genre_data.columns:
+            avg_votes = base_genre_data["imdb_votes"].mean()
+            if pd.isna(avg_votes) or avg_votes < 10_000:
+                audience_demand = "Low"
+            elif avg_votes < 100_000:
+                audience_demand = "Medium"
+            else:
+                audience_demand = "High"
+        else:
+            audience_demand = "Unknown"
 
-        # Data confidence
+        # Data confidence (kept for completeness but hidden in cards when static)
         confidence = "High"
         if "data_confidence" in comp_genre_data.columns:
             avg_conf = comp_genre_data["data_confidence"].mean()
@@ -253,10 +274,45 @@ def compute_gap_analysis(df, perspective="merged", competitor=None):
             leader_count = per_comp.get(leader, 0)
             ratio = (leader_count / max(len(df[df["platform"] == leader]), 1)) / max(base_share, 0.001)
 
-        # Recommendation
+        # Genre-specific addends for Low Priority / Narrow-gap recommendations
+        _GENRE_REC_ADDENDS = {
+            "romance": " K-drama and European romance catalog offer high-quality titles at lower acquisition costs.",
+            "family": " Animated feature films and holiday specials are evergreen with high rewatch value.",
+            "music": " Concert films and music biopics perform well with dedicated fanbase appeal.",
+            "animation": " International animation (Studio Ghibli catalog, French animation) commands high engagement.",
+            "documentary": " Award-circuit docs and investigative series align with prestige brand positioning.",
+            "comedy": " Stand-up specials and international comedy (UK, Indian cinema) offer strong CPM value.",
+            "sport": " Feature-length sports documentaries (not live rights) are high-demand and acquirable.",
+            "western": " Classic western catalog collections anchor a distinct content identity for adult audiences.",
+            "horror": " International horror (J-horror, Spanish horror) fills gaps at affordable acquisition rates.",
+            "musical": " Broadway adaptation specials and concert films fit both family and prestige demographics.",
+        }
+
+        # Recommendation — dynamic based on gap characteristics
         target_count = min(max(int(comp_count * 0.3), 10), 50)
         min_imdb = max(round((comp_avg or 7.0) - 0.5, 1), 6.5)
-        recommendation = f"Acquire {target_count}-{target_count + 20} titles, {genre}, {min_imdb}+ IMDb, 2018-2023"
+        _g = genre.title()
+        if base_share < 0.02:
+            recommendation = (
+                f"Build from scratch: acquire 40-60 {_g} titles targeting 7.0+ IMDb "
+                f"classics and 2015+ catalog — no meaningful presence exists yet."
+            )
+        elif ratio >= 3.0 and (comp_avg or 0) > 7.0:
+            recommendation = (
+                f"Quality gap: competitor avg IMDb {comp_avg:.1f} vs merged — "
+                f"target elevated {_g} content ({min_imdb}+) to close prestige gap, not just volume."
+            )
+        elif ratio < 1.5:
+            addend = _GENRE_REC_ADDENDS.get(genre.lower(), "")
+            recommendation = (
+                f"Narrow gap ({ratio:.1f}x): 2-3 tentpole {_g} acquisitions sufficient."
+                f"{addend}"
+            )
+        else:
+            recommendation = (
+                f"Acquire {target_count}-{target_count + 20} {_g} titles, "
+                f"{min_imdb}+ IMDb, 2018-2023 to close the {ratio:.1f}x coverage gap."
+            )
 
         rows.append({
             "gap_type": "genre_share",
@@ -266,7 +322,7 @@ def compute_gap_analysis(df, perspective="merged", competitor=None):
             "quality_benchmark": round(base_avg, 2) if pd.notna(base_avg) else None,
             "competitor_lead": f"{PLATFORMS.get(leader, {}).get('name', leader)} has {ratio:.1f}x",
             "confidence": confidence,
-            "box_office_tier": box_office_tier,
+            "audience_demand": audience_demand,
             "recommendation": recommendation,
         })
 
@@ -381,7 +437,7 @@ def compute_competitive_positioning(df, competitor):
 
     our_leads = []
     their_leads = []
-    battlegrounds = []
+    battleground_dicts = []
 
     for genre in all_genres:
         m_count = merged_genres.get(genre, 0)
@@ -398,14 +454,283 @@ def compute_competitive_positioning(df, competitor):
             their_leads.append({"genre": genre, "lead": f"{c_share/max(m_share, 0.001):.1f}x",
                               "count": c_count, "avg_imdb": round(c_avg, 2) if pd.notna(c_avg) else None})
         else:
-            battlegrounds.append(genre)
+            # Store counts so the page can show a closeness bar
+            closeness = m_count / max(m_count + c_count, 1)
+            battleground_dicts.append({
+                "genre": genre,
+                "merger_count": m_count,
+                "comp_count": c_count,
+                "closeness": round(closeness, 3),
+            })
+
+    # Sort battlegrounds by closeness to 0.5 (most evenly contested first)
+    battleground_dicts.sort(key=lambda x: abs(x["closeness"] - 0.5))
 
     return {
         "our_leads": sorted(our_leads, key=lambda x: float(x["lead"].replace("x", "")), reverse=True)[:8],
         "their_leads": sorted(their_leads, key=lambda x: float(x["lead"].replace("x", "")), reverse=True)[:8],
-        "battlegrounds": battlegrounds[:8],
+        "battlegrounds": battleground_dicts[:8],
         "merged_size": len(merged),
         "comp_size": len(comp),
         "merged_avg_imdb": round(merged["imdb_score"].mean(), 2),
         "comp_avg_imdb": round(comp["imdb_score"].mean(), 2),
     }
+
+
+# ─── New helpers added 2026-03-20 ────────────────────────────────────────────
+
+def compute_quality_distribution(df):
+    """Compute IMDb score distribution data for the Quality Ladder section.
+
+    Returns a dict with per-platform score arrays and % above 7.0/8.0 thresholds.
+    """
+    result = {}
+    display_platforms = ALL_PLATFORMS + ["merged"]
+    for key in display_platforms:
+        if key == "merged":
+            pdata = build_merged_entity(df)
+        else:
+            pdata = df[df["platform"] == key]
+        scores = pdata["imdb_score"].dropna().tolist()
+        n = len(scores)
+        above_7 = sum(1 for s in scores if s >= 7.0) / max(n, 1)
+        above_8 = sum(1 for s in scores if s >= 8.0) / max(n, 1)
+        result[key] = {
+            "scores": scores,
+            "n": n,
+            "avg": round(float(np.mean(scores)), 2) if scores else None,
+            "above_7": above_7,
+            "above_8": above_8,
+        }
+    return result
+
+
+def compute_temporal_momentum(df):
+    """Compute avg IMDb score by decade for each platform.
+
+    Returns a DataFrame: platform, decade, avg_imdb, title_count.
+    Filters to decades with ≥10 titles to avoid noise.
+    """
+    rows = []
+    for key in ALL_PLATFORMS + ["merged"]:
+        if key == "merged":
+            pdata = build_merged_entity(df)
+        else:
+            pdata = df[df["platform"] == key]
+        if "decade" not in pdata.columns:
+            continue
+        grouped = (
+            pdata[pdata["imdb_score"].notna()]
+            .groupby("decade")
+            .agg(avg_imdb=("imdb_score", "mean"), title_count=("imdb_score", "count"))
+            .reset_index()
+        )
+        grouped = grouped[grouped["title_count"] >= 10]
+        grouped["platform"] = key
+        rows.append(grouped)
+    if rows:
+        return pd.concat(rows, ignore_index=True)
+    return pd.DataFrame(columns=["platform", "decade", "avg_imdb", "title_count"])
+
+
+def compute_alternative_scenario(df, platform_a, platform_b):
+    """Compute merger KPIs for any two-platform hypothetical combination.
+
+    Returns a dict with the same keys as compute_merger_kpis() where possible.
+    """
+    pa = df[df["platform"] == platform_a].copy()
+    pb = df[df["platform"] == platform_b].copy()
+    combined = pd.concat([pa, pb]).drop_duplicates(subset="id", keep="first")
+    combined["platform"] = "alt_merged"
+
+    kpis = {}
+
+    kpis["catalog_size"] = {
+        "value": f"{len(combined):,}",
+        "label": "Combined Catalog Size",
+        "detail": f"{PLATFORMS.get(platform_a,{}).get('name',platform_a)}: {len(pa):,} + {PLATFORMS.get(platform_b,{}).get('name',platform_b)}: {len(pb):,}",
+    }
+
+    avg_a = pa["imdb_score"].mean()
+    avg_merged = combined["imdb_score"].mean()
+    lift = avg_merged - avg_a if pd.notna(avg_a) and pd.notna(avg_merged) else 0
+    kpis["avg_imdb"] = {
+        "value": f"{avg_merged:.2f}" if pd.notna(avg_merged) else "N/A",
+        "label": "Avg IMDb",
+        "detail": f"Lift vs {PLATFORMS.get(platform_a,{}).get('name',platform_a)}: {lift:+.2f}",
+    }
+
+    # Genre diversity
+    a_genres = pa.explode("genres")["genres"].value_counts()
+    b_genres = pb.explode("genres")["genres"].value_counts()
+    m_genres = combined.explode("genres")["genres"].value_counts()
+
+    def _entropy(vc):
+        t = vc.sum()
+        if t == 0:
+            return 0.0
+        p = vc / t
+        return float(-np.sum(p * np.log2(p + 1e-9)))
+
+    kpis["genre_diversity"] = {
+        "value": f"{_entropy(m_genres):.2f}",
+        "label": "Genre Diversity (Shannon)",
+        "detail": f"{PLATFORMS.get(platform_a,{}).get('name',platform_a)}: {_entropy(a_genres):.2f} → combined: {_entropy(m_genres):.2f}",
+    }
+
+    # Overlap rate
+    a_profile = set(zip(pa.explode("genres")["genres"], pa.explode("genres")["type"]))
+    b_profile = set(zip(pb.explode("genres")["genres"], pb.explode("genres")["type"]))
+    overlap = a_profile & b_profile
+    total = a_profile | b_profile
+    overlap_rate = len(overlap) / max(len(total), 1)
+    kpis["overlap_rate"] = {
+        "value": f"{overlap_rate:.0%}",
+        "label": "Content Profile Overlap",
+        "detail": f"{len(overlap)} of {len(total)} genre-type pairs overlap",
+    }
+
+    # Prestige
+    if "award_wins" in combined.columns:
+        wins = combined["award_wins"].fillna(0).sum()
+        a_wins = pa["award_wins"].fillna(0).sum()
+        coverage = combined["award_wins"].notna().mean()
+        if coverage >= WIKIDATA_MIN_COVERAGE and a_wins > 0:
+            lift_pct = (wins - a_wins) / a_wins
+            kpis["prestige_lift"] = {
+                "value": f"+{lift_pct:.0%}",
+                "label": "Award-Winning Titles Lift",
+                "detail": f"Award wins: {int(a_wins)} → {int(wins)} ({coverage:.0%} coverage)",
+            }
+        kpis["_award_wins_raw"] = float(wins) if "award_wins" in combined.columns else 0.0
+    else:
+        kpis["_award_wins_raw"] = 0.0
+
+    # Franchise depth — visible KPI + internal radar field
+    if "collection_name" in combined.columns:
+        franchise_depth = combined["collection_name"].notna().sum() / max(len(combined), 1)
+    else:
+        franchise_depth = 0.0
+    kpis["franchise_depth"] = {
+        "value": f"{franchise_depth:.0%}",
+        "label": "Franchise Depth",
+        "detail": "% of titles belonging to a named franchise or film collection",
+    }
+    kpis["_franchise_depth"] = franchise_depth
+
+    # International reach — visible KPI + internal radar field
+    # Proxy: titles whose primary production country is outside the major English-speaking markets
+    _ENGLISH_COUNTRIES = {"US", "GB", "AU", "CA", "IE", "NZ"}
+    if "production_countries" in combined.columns:
+        def _is_intl(countries):
+            if countries is None or (isinstance(countries, float)):
+                return False
+            lst = countries if isinstance(countries, list) else [str(countries)]
+            return bool(lst) and lst[0] not in _ENGLISH_COUNTRIES
+        intl_reach = combined["production_countries"].apply(_is_intl).sum() / max(len(combined), 1)
+    else:
+        intl_reach = 0.0
+    kpis["intl_reach"] = {
+        "value": f"{intl_reach:.0%}",
+        "label": "International Reach",
+        "detail": "% of titles primarily produced outside English-speaking markets (US/UK/AU/CA)",
+    }
+    kpis["_intl_reach"] = intl_reach
+
+    # Raw numbers for radar normalization
+    kpis["_catalog_size_raw"] = len(combined)
+    kpis["_avg_imdb_raw"] = float(avg_merged) if pd.notna(avg_merged) else 0.0
+    entropy_val = _entropy(m_genres)
+    kpis["_entropy_raw"] = entropy_val
+
+    return kpis
+
+
+def compute_best_alternative_scenario(df):
+    """Find the platform pair (excluding Netflix+Max) with highest quality-weighted catalog.
+
+    Returns (platform_a, platform_b) tuple or None if computation fails.
+    """
+    best = None
+    best_score = 0.0
+    for pa, pb in itertools.combinations(ALL_PLATFORMS, 2):
+        if {pa, pb} == set(MERGED_PLATFORMS):
+            continue
+        combined = pd.concat([
+            df[df["platform"] == pa],
+            df[df["platform"] == pb],
+        ]).drop_duplicates(subset="id", keep="first")
+        avg = combined["imdb_score"].mean()
+        score = len(combined) * (float(avg) if pd.notna(avg) else 0.0)
+        if score > best_score:
+            best_score = score
+            best = (pa, pb)
+    return best
+
+
+def compute_acquisition_shortlist(df, gap_df, n_per_gap=8):
+    """Find real titles from competitor catalogs that fit each high-priority gap.
+
+    For each High/Medium severity gap genre, finds actual titles on competitor
+    platforms in that genre, sorted by Fit Score.
+
+    Returns dict: {genre: DataFrame with title, year, platform, imdb_score, imdb_votes, fit_score}.
+    """
+    if gap_df.empty:
+        return {}
+
+    merged_ids = set(build_merged_entity(df)["id"])
+    shortlist = {}
+
+    high_priority = gap_df[gap_df["severity"].isin(["High", "Medium"])].head(5)
+
+    for _, gap in high_priority.iterrows():
+        genre = gap["genre"]
+        # Find titles from competitor platforms in this genre
+        comp_titles = df[~df["id"].isin(merged_ids)].copy()
+        comp_exploded = comp_titles.explode("genres")
+        in_genre = comp_exploded[comp_exploded["genres"] == genre].copy()
+
+        if in_genre.empty:
+            continue
+
+        # Compute fit score: quality (50%) + audience size (30%) + recency (20%)
+        in_genre = in_genre[in_genre["imdb_score"].notna()].copy()
+        if in_genre.empty:
+            continue
+
+        max_year = in_genre["release_year"].max() if "release_year" in in_genre.columns else 2023
+        min_year = max(in_genre["release_year"].min(), 1980) if "release_year" in in_genre.columns else 1980
+
+        in_genre["_quality"] = in_genre["imdb_score"] / 10.0
+        if "imdb_votes" in in_genre.columns:
+            in_genre["_audience"] = (in_genre["imdb_votes"].fillna(0).clip(upper=100000) / 100000)
+        else:
+            in_genre["_audience"] = 0.5
+        if "release_year" in in_genre.columns:
+            year_range = max(max_year - min_year, 1)
+            in_genre["_recency"] = (in_genre["release_year"].fillna(min_year) - min_year) / year_range
+        else:
+            in_genre["_recency"] = 0.5
+
+        in_genre["fit_score"] = (
+            0.5 * in_genre["_quality"] +
+            0.3 * in_genre["_audience"] +
+            0.2 * in_genre["_recency"]
+        )
+
+        cols = ["id", "title", "release_year", "platform", "imdb_score", "fit_score"]
+        if "imdb_votes" in in_genre.columns:
+            cols.insert(5, "imdb_votes")
+
+        result = (
+            in_genre[[c for c in cols if c in in_genre.columns]]
+            .drop_duplicates(subset=["title", "release_year"])
+            .sort_values("fit_score", ascending=False)
+            .head(n_per_gap)
+            .copy()
+        )
+        result["fit_score"] = result["fit_score"].round(3)
+        shortlist[genre] = result
+
+    return shortlist

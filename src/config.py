@@ -34,22 +34,22 @@ PLATFORMS = {
     },
     "max": {
         "name": "Max",
-        "color": "#002BE7",
+        "color": "#6441A5",  # Purple — Max brand color
         "text_color": "#FFFFFF",
     },
     "merged": {
         "name": "Netflix + Max",
-        "color": "#00897B",  # Teal — distinct from both Netflix red and Max blue
+        "color": "#00B4A6",  # Teal-green — distinct combined entity color
         "text_color": "#FFFFFF",
     },
     "disney": {
         "name": "Disney+",
-        "color": "#113CCF",
+        "color": "#00A8E1",  # Teal-blue — Disney+ brand
         "text_color": "#FFFFFF",
     },
     "prime": {
         "name": "Prime Video",
-        "color": "#00A8E1",
+        "color": "#0073CF",  # Darker blue — distinct from Disney+
         "text_color": "#FFFFFF",
     },
     "paramount": {
@@ -59,8 +59,8 @@ PLATFORMS = {
     },
     "appletv": {
         "name": "Apple TV+",
-        "color": "#A2AAAD",  # Apple Silver — readable on dark backgrounds
-        "text_color": "#1a1a2e",
+        "color": "#555555",  # Dark gray — Apple minimalism on dark backgrounds
+        "text_color": "#FFFFFF",
     },
 }
 

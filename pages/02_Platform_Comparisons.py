@@ -41,7 +41,7 @@ from src.config import (
 )
 from src.config import WIKIDATA_COMPARISON_MIN_COVERAGE
 from src.data.loaders import load_all_platforms_credits, load_all_platforms_titles, load_enriched_titles
-from src.ui.badges import platform_badges_html, section_header_html
+from src.ui.badges import page_header_html, platform_badges_html, section_header_html
 from src.ui.filters import apply_filters, render_sidebar_filters
 from src.ui.session import init_session_state
 
@@ -413,10 +413,9 @@ df = apply_filters(raw_df, filters)
 # ── page header ──────────────────────────────────────────────────────────────
 
 st.markdown(
-    section_header_html(
+    page_header_html(
         "Platform Comparisons",
         "Benchmark the merged Netflix + Max catalog against streaming competitors",
-        font_size="2em",
     ),
     unsafe_allow_html=True,
 )

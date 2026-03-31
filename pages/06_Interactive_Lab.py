@@ -38,17 +38,17 @@ from src.analysis.lab import (
     get_talent_suggestions,
     predict_title,
 )
-from src.ui.badges import section_header_html, styled_metric_card_html
+from src.analysis.strategic import build_merged_entity
+from src.ui.badges import page_header_html, section_header_html, styled_banner_html, styled_metric_card_html
 from src.ui.session import init_session_state
 
 st.set_page_config(page_title="Interactive Lab", page_icon="📊", layout="wide")
 init_session_state()
 
 st.markdown(
-    section_header_html(
+    page_header_html(
         "Interactive Lab",
         "Playful, data-driven features — build a service, predict a title's success, or discover surprising insights.",
-        font_size="2em",
     ),
     unsafe_allow_html=True,
 )
@@ -374,6 +374,84 @@ with tab3:
             <span style="color:{CARD_TEXT};font-size:1.1rem;">{insight}</span>
         </div>
         """, unsafe_allow_html=True)
+
+st.divider()
+
+# ─── Section: Franchise Footprint ─────────────────────────────────────────────
+st.markdown(
+    section_header_html(
+        "Franchise Footprint",
+        "Top content franchises in the merged Netflix+Max catalog — which IP portfolios become dominant post-merger.",
+    ),
+    unsafe_allow_html=True,
+)
+
+if "collection_name" in enriched.columns and enriched["collection_name"].notna().sum() > 0:
+    try:
+        # Build merged entity from enriched (enriched already has platform column pre-deduplicate)
+        merged_ff = enriched[enriched["platform"].isin(["netflix", "max"])].copy()
+        merged_ff = merged_ff.drop_duplicates(subset="id", keep="first")
+
+        franchises = (
+            merged_ff[merged_ff["collection_name"].notna()]
+            .groupby("collection_name")
+            .agg(
+                title_count=("title", "count"),
+                avg_imdb=("imdb_score", "mean"),
+                latest_year=("release_year", "max"),
+            )
+            .reset_index()
+        )
+        franchises = (
+            franchises[franchises["title_count"] >= 2]
+            .sort_values("title_count", ascending=False)
+            .head(20)
+        )
+
+        if not franchises.empty:
+            fig_franchise = px.bar(
+                franchises.sort_values("title_count"),
+                x="title_count",
+                y="collection_name",
+                orientation="h",
+                color="avg_imdb",
+                color_continuous_scale=[[0, "#555"], [1, "#00B4A6"]],
+                template=PLOTLY_TEMPLATE,
+                height=max(400, 28 * len(franchises)),
+                title="Merged Catalog: Top 20 Franchises by Catalog Depth",
+            )
+            fig_franchise.update_layout(
+                coloraxis_colorbar_title="Avg IMDb",
+                margin=dict(r=130),
+                xaxis_title="Titles in Catalog",
+                yaxis_title="",
+            )
+            st.plotly_chart(fig_franchise, use_container_width=True)
+
+            top_f = franchises.iloc[0]
+            avg_str = f"{top_f['avg_imdb']:.1f}" if pd.notna(top_f["avg_imdb"]) else "N/A"
+            st.markdown(
+                styled_banner_html(
+                    "🎬",
+                    f"The merged entity's deepest franchise is <b>{top_f['collection_name']}</b> "
+                    f"with <b>{int(top_f['title_count'])}</b> titles and an average IMDb of <b>{avg_str}</b>.",
+                ),
+                unsafe_allow_html=True,
+            )
+            coverage_pct = enriched["collection_name"].notna().mean()
+            st.caption(
+                f"Based on TMDB collection data ({coverage_pct:.0%} catalog coverage). "
+                "Franchises with fewer than 2 titles excluded."
+            )
+        else:
+            st.info("No franchises with 2+ titles found in the merged catalog.")
+    except Exception as e:
+        st.warning(f"Franchise Footprint could not be computed: {e}")
+else:
+    st.info(
+        "Franchise data requires TMDB enrichment (`collection_name` field). "
+        "Run `scripts/08_enrich_tmdb.py` and `scripts/09_build_enriched_titles.py` to populate."
+    )
 
 # ─── Footer ─────────────────────────────────────────────────────────────────
 st.markdown(

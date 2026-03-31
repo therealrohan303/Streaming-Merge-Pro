@@ -1,5 +1,179 @@
 # Progress Log: Netflix + Max Merger Capstone
 
+## [2026-03-31] Round 5: page header redesign + Strategic Insights acquisition/scenario fixes
+
+### Done
+- ✅ **Coverage string bug fixed** — Full Acquisition Report expander was rendering `"0.9% if pd.notna(cv) else 'N/A'"` as literal text. Pre-computed `cv_str` before the f-string (same pattern already used in the card view at line 995).
+- ✅ **"→ View" → "→ Explore" in Acquisition Report** — Old button navigated to Explore Catalog which only searches Netflix+Max titles; competitor acquisition targets were never found. Now sets `st.session_state["sim_search"] = title_name` and navigates to Discovery Engine (`pages/04_Discovery_Engine.py`), which searches all 6 platforms. The `key="sim_search"` text_input in Discovery Engine's Title Match tab will be pre-populated on page load.
+- ✅ **Alternative Scenarios tagline fixed** — Changed "What if Netflix merged with a different partner?" to "Compare any two-platform merger scenario against the Netflix+Max baseline." (Platform A is not locked to Netflix).
+- ✅ **Scenario metric card consistency** — Replaced `compute_merger_kpis(titles)` for the baseline column with `compute_alternative_scenario(titles, "netflix", "max")`. All 3 columns (Netflix+Max, User pair, System recommendation) now show the identical KPI set: Catalog Size → Avg IMDb → Genre Diversity → Content Overlap → Franchise Depth → International Reach → Award-Winning Lift (conditional). Extracted a `_render_scenario_col()` helper to avoid 3× duplicated render logic.
+- ✅ **`compute_alternative_scenario` — 2 new visible KPIs** — `franchise_depth` and `intl_reach` promoted from internal `_` fields to proper KPI dicts (label + value + detail string). Internal fields kept for radar normalization.
+- ✅ **Strategic Trade-off Analysis enhanced** — Gain/loss bullet items now show colored delta badges (green `+0.23`, red `−0.18`) with actual normalized delta values. Added "Decision Guidance" block below the 2-column grid: data-driven verdict sentence comparing user scenario vs baseline vs system recommendation, plus strategic identity label.
+- ✅ **Global page header redesign** — Added `page_header_html(title, subtitle, accent_color)` to `src/ui/badges.py` with helper `_hex_to_rgb()`. Design: subtle gradient background, 2.4em bold title, bottom border accent, top border hint — visually distinct from the 1.35em section headers used within pages. All 8 pages (Home + 7 content pages) updated to use `page_header_html` for their page-level title and import it from `src.ui.badges`.
+
+### Backend changes
+- `src/ui/badges.py`: added `_hex_to_rgb()` (module-private) and `page_header_html()` (public)
+- `src/analysis/strategic.py`: `compute_alternative_scenario` — `franchise_depth` and `intl_reach` now emitted as visible KPI dicts (in addition to keeping `_franchise_depth` and `_intl_reach` internal fields)
+
+### Files changed
+- `src/ui/badges.py`
+- `src/analysis/strategic.py`
+- `pages/05_Strategic_Insights.py`
+- `Home.py`, `pages/01_Explore_Catalog.py`, `pages/02_Platform_Comparisons.py`, `pages/03_Platform_DNA.py`, `pages/04_Discovery_Engine.py`, `pages/06_Interactive_Lab.py`, `pages/07_Cast_Crew_Network.py`
+
+### Next
+- [ ] End-to-end QA: verify Discovery Engine Title Match pre-populates when "→ Explore" is clicked from acquisition report
+- [ ] Verify all 3 scenario columns show matching KPI count/order for all platform pair combinations
+
+---
+
+## [2026-03-21] Strategic Insights — v4 polish: ranked KPI, styled tables, HHI, acquisition UX
+
+### Done
+- ✅ **Fix 1: Catalog Rank KPI** — replaced confusing "+1.2x vs Prime Video" with "#2 by size" rank framing. Tooltip shows full context ("9,158 titles. Behind only Prime Video. Ahead of Disney+, Max."). All KPI cards now receive `accent_color=PLATFORMS["merged"]["color"]` explicitly.
+- ✅ **Fix 2: Styled threshold table** — replaced `st.dataframe(df_thresh)` with custom HTML table. Alternating row backgrounds, teal left-border + bold for Netflix+Max row. Rank columns show colored pill badges (🏆 gold for #1, silver #2, bronze #3). IMDb column color-coded green ≥7.0, amber ≥6.5.
+- ✅ **Fix 3: ROI bar — Netflix+Max bar added** — appended merged blended ROI as separate teal bar to `platform_roi_with_merged`. Paramount+ insight sentence added to banner (Top Gun/Mission Impossible theatrical-library context).
+- ✅ **Fix 4: ROI Explorer jitter** — replaced categorical x-axis with jittered numeric axis (`np.random.seed(42)`, `±0.35` uniform). Genre filter multiselect added above chart. Title search box highlights matching dots in yellow with text annotation. Dot size = IMDb votes (normalized).
+- ✅ **Fix 5: Gap Priority Matrix** — median-based crosshairs replace fixed 5.0/7.0 lines. Corner quadrant labels enlarged and repositioned (Priority Targets, Maintain, Selective, Curation Needed). "Show competitor benchmarks" toggle adds gray X markers for competitor platform averages per genre.
+- ✅ **Fix 6: Full Acquisition Report** — filtered to High/Medium priority gaps only (Low Priority sections removed). Replaced `st.dataframe` with row-by-row `st.columns` layout: poster thumbnail (40px), title bold, year, platform-colored name, IMDb value, Fit % colored badge, "→ View" button that sets `explore_search` session state and calls `st.switch_page`.
+- ✅ **Fix 7: Alternative Scenarios** — added "Combined Catalog Size" metric card to baseline column. Added "Strategic Trade-off Analysis" HTML div with What You Gain / What You Lose from `_DIM_GAIN_TEXT`/`_DIM_LOSS_TEXT` dicts + Best use case sentence. Added "Dimension Breakdown" expander with normalized radar values for all 3 scenarios.
+- ✅ **Fix 8: Catalog Concentration Index** — renamed section (was "Market Impact Simulation"). Removed stacked bar charts entirely. Computed pre-merger HHI (all 6 platforms separate) and delta vs post-merger HHI. Displayed as 3 metric cards (Pre-Merger, Post-Merger, Concentration Increase +N pts) with antitrust context explanation (+200 pts / >1,500 DOJ/FTC threshold).
+
+### Backend changes (`src/analysis/strategic.py`)
+- `compute_merger_kpis`: replaced `catalog_size_advantage` with `catalog_rank` key (rank-based framing with above/below context string)
+
+### Files changed
+- `src/analysis/strategic.py`
+- `pages/05_Strategic_Insights.py` — full rewrite with all 8 Round 4 fixes
+
+### Next
+- [ ] End-to-end QA: verify all 9 sections render without errors across all gap perspectives and competitor selections
+- [ ] Verify "→ View" buttons navigate correctly to Explore Catalog with title pre-loaded
+- [ ] Verify radar chart renders for all 15 platform pair combinations
+
+---
+
+## [2026-03-21] Strategic Insights — v3 polish: ridge plot, interactivity, radar scenarios
+
+### Done
+- ✅ **Fix 1: Merged entity prominence** — merged trace uses `width=2.5`/`scale=1.5` in ridge plot; always teal-green distinct from all individual platform colors.
+- ✅ **Fix 2: Ridge plot** — replaced unreadable overlapping density chart with stacked ridge plot. Each platform gets its own strip with its brand-color fill and inline label. Merged entity strip is 1.5× taller. Reference lines at 7.0 (Good) and 8.0 (Excellent) span all strips. Threshold table gains Rank (7.0), Rank (8.0), Rank (Avg) columns.
+- ✅ **Fix 3: Temporal momentum** — fixed decade x-axis ordering (extract numeric year, force `categoryorder="array"`). Added Netflix+Max glow underlay (width=10, opacity=0.15). Platform multiselect widget (merged always locked visible). Hover tooltip shows avg IMDb, title count, platform name.
+- ✅ **Fix 4: ROI Explorer expander** — per-platform scatter: x=budget tier, y=ROI, dot size=IMDb score, color=genre. Hover shows title, year, budget, box office, IMDb. Budget tiers ordered Low→Mid→High→Blockbuster on x-axis.
+- ✅ **Fix 5: Curation Targets deduplicated** — group by title+platform and aggregate genres into one row. Genre column shows comma-separated pills, not one row per genre. Rendered as HTML table with red "Review for removal" badge. Audit table column names fully spelled out (Netflix Count, Max Count, Shared).
+- ✅ **Fix 6: Gap card polish** — removed static "Data Confidence" label from every card. Replaced "Box Office" with "Audience Demand" (derived from avg IMDb votes per genre: Low <10K, Medium 10–100K, High >100K). Low Priority recommendations now have genre-specific addends (K-drama for Romance, animated features for Family, concert films for Music, etc.).
+- ✅ **Fix 7: Full Acquisition Report** — removed raw precomputed acquisition_targets table entirely. Removed separate "Acquisition Shortlist" expander. Replaced with unified "Full Acquisition Report": one `st.expander` per gap genre with decision trace header + top competitor titles table + Fit Score ProgressColumn. Download button moved to bottom.
+- ✅ **Fix 8: Competitive Positioning** — single-trace bar charts (all merger-leads bars one teal-green trace; all competitor-leads bars one competitor-color trace) — eliminates generic-blue multi-trace coloring. Battleground pills now show a 4px progress bar inside each pill (% merger share of merger+comp total) for instant visual of closeness. Added competitor-specific closing sentence (Marvel/Star Wars for Disney, live sports for Paramount, international production for Prime, originals-only strategy for Apple TV+).
+- ✅ **Fix 9: Franchise Footprint moved** — removed from Strategic Insights (Section 8). Added as new section in `pages/06_Interactive_Lab.py` with `st.divider()` + section header matching the rest of the page. Reuses enriched DataFrame already loaded.
+- ✅ **Fix 10: Alternative Scenarios rebuilt** — 3-column layout: Netflix+Max (baseline, locked), user-selected pair, system-recommended best pair (auto-computed by quality-weighted catalog score). Each column has metric cards + Strategic Profile sentence. Radar chart with 6 axes (Scale, Quality, Prestige, Diversity, International, Franchise). All 3 scenarios overlaid; Netflix+Max trace thicker and teal-green. Data-derived prose analysis below radar (stronger/weaker dimensions, strategic identity).
+
+### Backend changes (`src/analysis/strategic.py`)
+- `compute_gap_analysis`: added `audience_demand` field (replaces `box_office_tier` in display); genre-specific `_GENRE_REC_ADDENDS` for Low Priority recs; `itertools` imported
+- `compute_competitive_positioning`: `battlegrounds` now returns list of dicts `{genre, merger_count, comp_count, closeness}` sorted by |closeness-0.5|
+- `compute_alternative_scenario`: extended with `_award_wins_raw`, `_franchise_depth`, `_intl_reach`, `_catalog_size_raw`, `_avg_imdb_raw`, `_entropy_raw` for radar normalization
+- New function: `compute_best_alternative_scenario(df)` — finds platform pair with highest quality-weighted catalog (excluding Netflix+Max)
+
+### Files changed
+- `src/analysis/strategic.py`
+- `pages/05_Strategic_Insights.py` — full rewrite (9 sections, Franchise Footprint removed)
+- `pages/06_Interactive_Lab.py` — Franchise Footprint section appended
+
+### Next
+- [ ] End-to-end QA: verify all 9 sections render without errors across all gap perspectives and competitor selections
+- [ ] Verify radar chart renders for all 15 platform pair combinations
+
+---
+
+## [2026-03-20] Strategic Insights — v2 revamp: colors, new sections, visual rebuild
+
+### Done
+- ✅ **Platform colors updated app-wide** (`src/config.py`): Max→#6441A5 (purple), Disney→#00A8E1, Prime→#0073CF, Apple TV+→#555555, Merged→#00B4A6. All badges and charts across all pages now use these colors.
+- ✅ **Global genre title-case** — `_fmt_genre()` helper added to page; applied to chart axes, gap cards, overlap charts, prestige heatmap, competitive positioning, all f-strings.
+- ✅ **Section 1: Merger Value Dashboard** — KPI #6 "Catalog Size Advantage" value now shows "+2.1x vs Prime Video" format. Executive summary grammar fixed: overlap is framed as curation opportunity, not a lead.
+- ✅ **Section 2: Content Quality Ladder (NEW)** — IMDb density plot (overlapping filled curves, 7.0/8.0 reference lines), % above threshold table, temporal momentum line chart in expander.
+- ✅ **Section 3: Prestige Index** — bar chart picks up new purple for Max automatically. Heatmap: `margin=dict(r=130)` for colorbar visibility, `tickangle=30`, white-to-teal colorscale. Genre rows title-cased.
+- ✅ **Section 4: ROI Proxy** — rebuilt as horizontal bar chart. Break-even reference line at 1.0x. Annotations for Apple TV+ (streaming-first) and Paramount+ (theatrical-first). Strategic insight banner. Coverage disclaimer caption.
+- ✅ **Section 5: Content Overlap** — Stacked bar with title-case genre labels. Styled callout card. "Curation Targets" expander shows lowest-rated Netflix/Max titles in high-overlap genres (practical rationalization tool). Audit table has clear headers, % confidence via ProgressColumn.
+- ✅ **Section 6: Gap Analysis** — Gap Priority Matrix scatter (x=coverage%, y=avg IMDb, size=competitor lead multiple, quadrant labels). Dynamic recommendations by gap type (build from scratch / quality gap / narrow gap / standard). Acquisition Shortlist expander shows real competitor titles with Fit Score. Download button.
+- ✅ **Section 7: Competitive Positioning** — Replaced bullet lists with mini horizontal bar charts (green bars for merger leads, competitor-color bars for their leads). Competitor-specific strategic language for Disney/Paramount/Prime/Apple.
+- ✅ **Section 8: Franchise Footprint (NEW, replaces dead IP Synergy)** — Horizontal bar chart of top 20 franchises by catalog depth, color intensity = avg IMDb. Works at 8% TMDB coverage. One-sentence insight.
+- ✅ **Section 9: Alternative Merger Scenarios (NEW)** — Platform A + Platform B dropdown, recomputes KPIs vs Netflix+Max baseline side-by-side. Auto-generated 2-sentence takeaway. Academically impressive counterfactual analysis.
+- ✅ **Section 10: Market Impact Simulation** — Replaced pie charts with horizontal stacked bar charts (all platforms visible, not squished). Quality-weighted stacked bar added. HHI metric card centered with plain-English explanation. Prime Video caveat added.
+
+### Files changed
+- `src/config.py` — platform color palette updated
+- `src/analysis/strategic.py` — `compute_gap_analysis` recommendations dynamic; 4 new functions: `compute_quality_distribution`, `compute_temporal_momentum`, `compute_alternative_scenario`, `compute_acquisition_shortlist`; `catalog_size_advantage` KPI value format fixed
+- `pages/05_Strategic_Insights.py` — full rewrite (10 sections, ~620 lines)
+
+### Next
+- [ ] End-to-end integration test of all 8 pages with new platform colors
+- [ ] Final QA: rotate through all Gap Analysis + Competitive Positioning combinations
+
+---
+
+## [2026-03-20] Strategic Insights — crash fix + full page revamp
+
+### Done
+- ✅ **Crash fix (line 331)** — `ValueError` in gap card f-string caused by inline conditional format spec (`:.2f if pd.notna(...) else 'N/A'`). Fixed by extracting all dynamic variables (`quality_str`, `coverage_str`, `competitor_lead_str`, etc.) before the f-string. All gap card variables are now null-guarded with `.get()` and explicit string casts.
+- ✅ **Section 1: Merger Value Dashboard** — added 6th KPI card "Merged Catalog Size" (vs next largest competitor with delta %). Genre Gaps tooltip now shows specific genre names (e.g. "Documentation, European"). Auto-generated executive summary banner below cards synthesizes size ratio, overlap rate, and prestige lift dynamically.
+- ✅ **Section 2: Prestige Index** — fixed bar chart color map (canonical `PLATFORMS` colors including teal for merged). Heatmap: dynamic height (`38px × genre count`), x-axis labels rotated 30°, colorbar labelled "Prestige/1K", color scale changed to dark-to-teal. Added 3-bullet auto-generated insights block (top platform by density, top genre, Netflix+Max vs Disney+Prime combined).
+- ✅ **Section 3: ROI Proxy Table** — promoted to its own section outside the prestige if-block. Platform display names mapped. Median ROI formatted as "2.01x". Column renamed "Titles with Coverage". Caption added. Merged entity row highlighted in teal via pandas Styler.
+- ✅ **Section 4: Content Overlap** — replaced plain text with styled callout card (icon + bold headline + 2-3 strategy sentences). Audit table has clear column headers and confidence formatted as percentage via `ProgressColumn`.
+- ✅ **Section 5: Gap Analysis** — crash fully resolved. Cards rebuilt as prioritized decision-trace format: severity badge (red/amber/gray), four inline data points (coverage, IMDb, competitor lead, box office tier), acquisition recommendation. All variables null-checked, individual card errors caught so one bad row never crashes the page. "Download Gap Report" CSV button added.
+- ✅ **Section 6: Competitive Positioning (new)** — competitor dropdown, 3-column layout (Merger Leads / Competitor Leads / Battleground), dynamic 2-sentence strategic recommendation. Uses existing `compute_competitive_positioning()` from `src/analysis/strategic.py`.
+- ✅ **Section 7: Market Impact Simulation (rebuilt)** — 3 columns: catalog size pie, quality-weighted pie, HHI metric card. Merged entity shown as a single combined slice. Disclaimer added. Gauge removed in favour of cleaner `styled_metric_card_html`.
+- ✅ **Layout polish** — `st.divider()` between all major sections. All section headers use `section_header_html()`. Footer updated to canonical text including Netflix withdrawal note.
+- ✅ **src/analysis/strategic.py** — `compute_merger_kpis()`: genre names injected into tooltip detail; `catalog_size_advantage` KPI added.
+
+### Files changed
+- `pages/05_Strategic_Insights.py` — full rewrite
+- `src/analysis/strategic.py` — `compute_merger_kpis()` updated
+
+### Next
+- [ ] End-to-end integration test of all 8 pages
+- [ ] Final QA: rotate through all Gap Analysis competitor/perspective combos
+
+---
+
+## [2026-03-20] Discovery Engine — detail panel persistence + footer fix
+
+### Done
+- ✅ **Tab 3: vibe results persisted in session state** — root cause of the "results disappear on detail click" bug: all rendering was inside the `if st.button("Search Vibes"):` block, so any `st.rerun()` (triggered by the ℹ️ detail button) cleared results. Fixed by saving `results_v` to `st.session_state.vibe_results` and detected signals to `st.session_state.vibe_signals` on search, then moving all rendering outside the button block to read from session state — matching the same pattern used by Tabs 1 and 2. Added both keys to the session state initialisation block.
+- ✅ **Tab 3: signals banner also persists** — detected-themes pills and fallback message now render from `st.session_state.vibe_signals` alongside the results, so they survive reruns too.
+- ✅ **Footer standardised** — page 04 had a shortened, divergent footer ("academic analysis only", missing "All insights are illustrative, not prescriptive.", truncated update sentence). Updated to match the canonical footer used on all other pages.
+
+### Files changed
+- `pages/04_Discovery_Engine.py` — vibe results/signals session state keys, rendering block restructured out of button scope, footer text corrected
+
+### Next
+- [ ] End-to-end integration test of all 4 tabs
+- [ ] Final integration testing of all 8 pages
+
+---
+
+## [2026-03-20] Discovery Engine — accuracy fixes (Tabs 1, 2, 3)
+
+### Done
+- ✅ **Tab 1: score spread** — added min-max rescaling of raw cosine similarity scores to [0.55, 0.90] inside `get_similar_with_explanation()`. Top result now scores ~87–90%, bottom ~55–60%, giving a meaningful 25–30 point spread instead of the previous 63–65% cluster.
+- ✅ **Tab 1: Attack on Titan placeholder** — changed `_poster_html()` placeholder background from platform brand color (Netflix red #E50914) to neutral `#2a2a3e`. Prevents jarring solid-red blocks when a poster is missing from the enriched parquet.
+- ✅ **Tab 2: sort order fix** — `mood_board_recommendations()` now sorts by `["mood_match_pct", "quality_norm"]` descending (mood-primary) instead of a blended `mood_score` that was 45% quality-weighted. Changed blend to 85/15. Brief Encounter (100%) will always appear before Breaking Bad (60%) regardless of quality scores.
+- ✅ **Tab 2: genre penalty for incompatible moods** — added `_MOOD_GENRE_COMPAT` dict and `_MOOD_GENRE_PENALTY = 0.2`. Titles with incompatible primary genres (action/war/adventure for "Ugly cry", action/war/horror for "Love story", horror/crime/war for "Feel-good") and no required genre (drama/romance) have their `mood_hit` multiplied by 0.2. Vikings, Game of Thrones now score near-zero for "Ugly cry".
+- ✅ **Tab 2: low-match separation** — page rendering splits `_mood_results` at `mood_match_pct ≥ 0.5`. Primary group renders inline; results below 50% appear in a collapsed "Also worth considering" expander.
+- ✅ **Tab 3: distress pre-filter hardened** — changed from checking only the *first* genre to checking ALL genres (any-match), so stand-up comedy specials are excluded even when "documentation" or other genres appear first. Added "music" to exclusion set.
+- ✅ **Tab 3: emotional signal → genre boost** — when "emotional" is detected in signals, "drama" and "romance" are injected into `genre_signals` so dramatic/romantic titles receive a genre-match score boost.
+- ✅ **Tab 3: tone re-ranking** — after computing `vibe_score`, descriptions are scanned for `_SAD_DESC_KW` (dies/death/grief/tragedy → ×1.20) and `_COMEDY_DESC_KW` (comedy/funny/comedian → ×0.50) when a distress query is detected. Eliminates stand-up specials from "sad and devastating" results.
+- ✅ **Tab 3: fallback message** — changed "No specific themes detected — searching by description similarity" to "Searching by description and tone similarity."
+
+### Files changed
+- `src/analysis/discovery.py` — score rescaling, `_MOOD_GENRE_COMPAT`, genre penalty in `_compute_mood_match`, mood sort fix, vibe distress filter, emotional→genre mapping, tone re-ranking
+- `pages/04_Discovery_Engine.py` — placeholder color, Tab 2 split rendering, Tab 3 fallback message
+
+### Next
+- [ ] End-to-end integration test of all 4 tabs
+- [ ] Final integration testing of all 8 pages
+
+---
+
 ## [2026-03-17] README overhaul — full data setup guide
 
 ### Done
@@ -13,6 +187,32 @@
 ### Next
 - [ ] Final integration testing of all 8 pages end-to-end
 - [ ] Mark project as feature-complete
+
+---
+
+## [2026-03-17] Discovery Engine — comprehensive revamp (all 4 tabs)
+
+### Done
+- ✅ **Backend: triple-signal mood matching** — `MOOD_TILES` in `src/analysis/discovery.py` now carry a `"genres"` field (lowercase genre strings). `mood_board_recommendations()` fully rewritten with a triple-signal weighted scorer: genre overlap 40% (100% catalog coverage), TMDB keyword overlap 40% (95% coverage), MovieLens genome tag overlap 20% (12% coverage). Formula updated: `0.55 × mood_match + 0.45 × quality_norm` (was 0.6/0.4). Matching now via list comprehension to avoid pandas `apply()` tuple-unpacking pitfall.
+- ✅ **Genre casing fixed everywhere** — all genres stored as lowercase numpy arrays; `_genre_pills_html()` now applies `.title()` and handles `np.ndarray` input via `list()` conversion. Genre pills now show "Drama", "Sci-Fi" not "drama", "sci-fi".
+- ✅ **Tab 1: inline detail panel** — removed the standalone `if discovery_detail_id:` block that rendered at page bottom. Detail panel now renders immediately below each card inside the results loop. No more scroll-to-bottom surprise.
+- ✅ **Tab 1: polished Why Similar expander** — replaced raw data dump with `_render_why_similar()` helper: 4 structured sections — Narrative Similarity progress bar (colored green/amber/gray by score), Genre Alignment gold-bordered pills (`.title()` cased), Creative Connections (👥 name + role.title()), Shared Themes (🏷️ tag pills). Falls back to "Matched by description and story similarity" if no overlap data.
+- ✅ **Tab 1: 3-column controls layout** — search input (with Surprise Me below it) | Scope radio | Results slider + Min IMDb slider. Cleaner, less cluttered.
+- ✅ **Tab 2: styled mood tiles** — CSS injected via `st.markdown('<style>…</style>')` targeting Streamlit column button selectors: dark card background, rounded corners, gold hover border. Selected state shown with "✓ " label prefix.
+- ✅ **Tab 2: inline detail panel** — same fix as Tab 1; detail renders below the card, not at page bottom.
+- ✅ **Tab 3: vibe_search() positional arg bug fixed** — previous call passed `genome_vectors` and `genome_id_map` in wrong positional slots (treated as `desc_embeddings`/`desc_id_map`). Changed to keyword arguments: `vibe_search(vibe_query, source_v, genome_vectors=..., genome_id_map=..., enriched_df=..., ...)`.
+- ✅ **Tab 3: inline detail panel** — same fix; no more page-bottom rendering.
+- ✅ **Tab 4: full revamp** — history is now a proper actionable search log: colored type badges (blue/purple/green for Title Match/Mood Board/Vibe Search), 📌 pin button (pins exempt from 10-entry eviction cap), "See Results" expander with stored mini-cards (backward-compatible with old string results via `isinstance` check), "▶ Run Again" button restores search params and auto-triggers search in the relevant tab, group-by toggle (Chronological / By Tab Type) with colored `section_header_html` dividers, Clear All button.
+- ✅ **Run Again architecture** — `run_again_flag = {type, params}` in session state; each tab checks its own type on load, restores params to session state, sets a tab-specific `run_sim_now`/`run_mood_now`/`run_vibe_now` flag; flags auto-clear via `st.session_state.pop()`.
+- ✅ **History schema enriched** — `_add_to_history()` now stores `results` as list of dicts `{title, year, platforms, imdb_score, id}` (was list of strings), plus `params` (tab-specific search params) and `pinned` field.
+
+### Files changed
+- `src/analysis/discovery.py` — added `genres` field to all 16 MOOD_TILES; rewrote `mood_board_recommendations()` with triple-signal matching and updated score formula
+- `pages/04_Discovery_Engine.py` — full rewrite: genre casing, `_render_why_similar()`, inline detail panels, CSS mood tiles, vibe_search arg fix, history revamp with Run Again + pin + See Results
+
+### Next
+- [ ] End-to-end integration test of all 4 tabs
+- [ ] Final integration testing of all 8 pages end-to-end
 
 ---
 
@@ -1074,5 +1274,6 @@ Applied the same visual UI/UX patterns from pages 00–02 uniformly across pages
 - `pages/03_Platform_DNA.py`
 
 ### Next
+- [ ] Working on revamping and polishing The Discovery Engine page and pages after that as well.
 - [ ] Final integration testing of all 8 pages end-to-end
 - [ ] Mark project as feature-complete

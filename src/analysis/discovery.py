@@ -26,86 +26,120 @@ MOOD_TILES = [
         "emoji": "⚡", "label": "Edge of your seat",
         "genome_tags": ["suspenseful", "tense", "nail-biting", "gripping", "thrilling"],
         "tmdb_kws": ["suspense", "thriller", "tension", "thrill"],
+        "genres": ["thriller", "horror", "crime", "mystery"],
     },
     {
         "emoji": "😢", "label": "Ugly cry",
         "genome_tags": ["tearjerker", "emotional", "moving", "heart wrenching", "sad", "touching"],
         "tmdb_kws": ["emotional", "tragedy", "tearjerker", "grief"],
+        "genres": ["drama", "romance"],
     },
     {
         "emoji": "😊", "label": "Feel-good and warm",
         "genome_tags": ["feel-good", "heartwarming", "uplifting", "optimistic", "cheerful", "warm"],
         "tmdb_kws": ["feel-good", "heartwarming", "feel good", "uplifting", "feel good film"],
+        "genres": ["comedy", "animation", "family"],
     },
     {
         "emoji": "🌀", "label": "Mind-bending",
         "genome_tags": ["mind bending", "psychological", "surreal", "thought provoking", "cerebral", "complex narrative"],
         "tmdb_kws": ["mindbender", "psychological", "mind-bender", "nonlinear narrative"],
+        "genres": ["thriller", "sci-fi", "mystery"],
     },
     {
         "emoji": "🏔️", "label": "Epic adventure",
         "genome_tags": ["epic", "adventure", "grand", "spectacular", "journey", "quest"],
         "tmdb_kws": ["epic", "adventure", "quest", "epic journey"],
+        "genres": ["action", "adventure", "fantasy", "sci-fi"],
     },
     {
         "emoji": "🌑", "label": "Dark and unsettling",
         "genome_tags": ["dark", "disturbing", "unsettling", "bleak", "gritty", "sinister", "dark themes"],
-        "tmdb_kws": ["dark", "disturbing", "psychological horror", "dark comedy", "nihilism"],
+        "tmdb_kws": ["dark", "disturbing", "psychological horror", "nihilism", "bleak", "grim"],
+        "genres": ["horror", "thriller", "crime", "drama"],
     },
     {
         "emoji": "😂", "label": "Laugh out loud",
         "genome_tags": ["funny", "hilarious", "comedy", "humor", "witty", "slapstick", "satirical"],
         "tmdb_kws": ["comedy", "humor", "funny", "satire", "parody"],
+        "genres": ["comedy", "animation"],
     },
     {
         "emoji": "🕯️", "label": "Slow burn",
         "genome_tags": ["slow burn", "slow-burn", "atmospheric", "meditative", "deliberate pacing"],
         "tmdb_kws": ["slow burn", "atmospheric", "slow paced"],
+        "genres": ["drama", "thriller", "mystery"],
     },
     {
         "emoji": "🏆", "label": "Inspiring true story",
         "genome_tags": ["inspirational", "based on true story", "uplifting", "real events", "biography"],
         "tmdb_kws": ["based on true story", "biography", "inspirational", "based on a true story"],
+        "genres": ["drama", "documentation"],
     },
     {
         "emoji": "📼", "label": "Nostalgia trip",
         "genome_tags": ["nostalgic", "retro", "classic", "old school", "period piece"],
         "tmdb_kws": ["nostalgia", "retro", "80s", "90s", "period piece"],
+        "genres": ["drama", "comedy", "romance"],
     },
     {
         "emoji": "❤️", "label": "Love story",
         "genome_tags": ["romance", "love story", "romantic", "relationship", "love"],
         "tmdb_kws": ["romance", "love story", "romantic", "love", "romantic comedy"],
+        "genres": ["romance", "drama"],
     },
     {
         "emoji": "🔍", "label": "Mystery unraveling",
         "genome_tags": ["mystery", "whodunit", "detective", "puzzle", "twists", "investigation"],
         "tmdb_kws": ["mystery", "whodunit", "detective", "investigation"],
+        "genres": ["mystery", "thriller", "crime"],
     },
     {
         "emoji": "💥", "label": "Action-packed",
         "genome_tags": ["action", "exciting", "fast paced", "explosive", "high octane"],
         "tmdb_kws": ["action", "action hero", "fight", "action thriller"],
+        "genres": ["action", "thriller", "adventure"],
     },
     {
         "emoji": "🧠", "label": "Thought-provoking",
         "genome_tags": ["thought provoking", "philosophical", "deep", "meaningful", "social commentary"],
         "tmdb_kws": ["philosophical", "thought-provoking", "social commentary", "meditation"],
+        "genres": ["drama", "sci-fi", "documentation"],
     },
     {
         "emoji": "👨‍👩‍👧", "label": "Family night",
         "genome_tags": ["family", "family friendly", "wholesome", "for kids", "all ages"],
         "tmdb_kws": ["family", "family film", "animation", "family friendly"],
+        "genres": ["family", "animation", "comedy"],
     },
     {
         "emoji": "💎", "label": "Hidden gem",
         "genome_tags": ["underrated", "overlooked", "cult classic", "hidden gem", "cult"],
         "tmdb_kws": ["cult", "underrated", "cult film"],
+        "genres": ["drama", "comedy", "thriller"],
     },
 ]
 
 # Build a lookup dict for fast access by label
 MOOD_TILE_BY_LABEL = {t["label"]: t for t in MOOD_TILES}
+
+# Per-mood genre compatibility: titles with incompatible primary genres and no required genres
+# receive a heavy penalty so e.g. Vikings doesn't appear in "Ugly cry" results
+_MOOD_GENRE_COMPAT = {
+    "Ugly cry": {
+        "required_any": {"drama", "romance"},
+        "incompatible": {"action", "war", "western", "sport", "adventure"},
+    },
+    "Love story": {
+        "required_any": {"romance", "drama"},
+        "incompatible": {"action", "war", "horror", "sci-fi", "sport"},
+    },
+    "Feel-good and warm": {
+        "required_any": {"comedy", "animation", "family", "drama"},
+        "incompatible": {"horror", "crime", "war"},
+    },
+}
+_MOOD_GENRE_PENALTY = 0.2
 
 
 def get_similar_with_explanation(
@@ -178,6 +212,20 @@ def get_similar_with_explanation(
         result = row.to_dict()
         result["explanation"] = explanation
         results.append(result)
+
+    # Rescale similarity_score to [0.55, 0.90] so ranking is visually meaningful
+    if len(results) > 1:
+        scores = [r["similarity_score"] for r in results]
+        lo, hi = min(scores), max(scores)
+        span = hi - lo
+        for r in results:
+            if span > 1e-6:
+                norm = (r["similarity_score"] - lo) / span
+                r["similarity_score"] = 0.55 + norm * 0.35
+            else:
+                r["similarity_score"] = 0.72
+    elif len(results) == 1:
+        results[0]["similarity_score"] = 0.80
 
     return results
 
@@ -309,6 +357,12 @@ def extract_vibe_signals(query_text, tag_names=None, keyword_list=None):
         "slow-burn": ["slow-burn", "slow burn", "patient", "meditative"],
         "twist ending": ["twist", "surprise ending", "unexpected"],
         "visually stunning": ["visual", "beautiful", "cinematography", "stunning"],
+        "emotional": [
+            "sad", "devastating", "heartbreaking", "grief", "tragedy", "tragic",
+            "loss", "mourning", "depressing", "melancholic", "tearjerker",
+            "gut-wrenching", "weep", "sorrowful", "sobbing", "devastating",
+        ],
+        "tense": ["tense", "tension", "anxiety", "dread", "foreboding"],
     }
     for mood, patterns in mood_patterns.items():
         if any(p in query_lower for p in patterns):
@@ -345,6 +399,19 @@ def vibe_search(
         df = df[df["imdb_votes"] >= min_votes]
     if year_range:
         df = df[(df["release_year"] >= year_range[0]) & (df["release_year"] <= year_range[1])]
+
+    # Tonal pre-filter: hard-exclude comedy/animation/music for emotional-distress queries
+    # Checks ALL genres (not just primary) to catch stand-up specials in any genre order
+    _DISTRESS_WORDS = {
+        "sad", "devastating", "heartbreaking", "grief", "tragedy", "tragic",
+        "loss", "mourning", "depressing", "melancholic",
+    }
+    _TONAL_EXCL_GENRES = {"comedy", "animation", "family", "talk-show", "reality", "music"}
+    if set(query_text.lower().split()) & _DISTRESS_WORDS:
+        def _has_excl_genre(g):
+            gl = list(g) if isinstance(g, np.ndarray) else (g if isinstance(g, (list, tuple)) else [])
+            return any(str(x).lower() in _TONAL_EXCL_GENRES for x in gl)
+        df = df[~df["genres"].apply(_has_excl_genre)]
 
     if df.empty:
         return pd.DataFrame(), []
@@ -385,6 +452,11 @@ def vibe_search(
         "thriller", "comedy", "drama", "horror", "romance",
         "sci-fi", "action", "documentary", "animation", "mystery",
     ]]
+    # Emotional tone signal → boost drama/romance candidates
+    if "emotional" in signals:
+        for _g in ["drama", "romance"]:
+            if _g not in genre_signals:
+                genre_signals.append(_g)
     if genre_signals:
         df["genre_score"] = df["genres"].apply(
             lambda g: len(set(g or []) & set(genre_signals)) / len(genre_signals)
@@ -465,6 +537,22 @@ def vibe_search(
         awards_w * df.loc[~has_genome, "awards_score"]
     )
 
+    # Tone-based description re-ranking: boost sad/tragic descriptions, penalise comedy ones
+    _SAD_DESC_KW = {
+        "dies", "death", "loss", "grief", "tragedy", "devastating",
+        "heartbreak", "sacrifice", "mourning", "sorrow", "tragic",
+    }
+    _COMEDY_DESC_KW = {"comedy", "funny", "laugh", "hilarious", "jokes", "comedian", "standup", "stand-up"}
+    if set(query_text.lower().split()) & _DISTRESS_WORDS:
+        def _desc_tone_mult(desc):
+            ds = set(str(desc).lower().split())
+            if ds & _SAD_DESC_KW:
+                return 1.20
+            if ds & _COMEDY_DESC_KW:
+                return 0.50
+            return 1.0
+        df["vibe_score"] = df["vibe_score"] * df["description"].fillna("").apply(_desc_tone_mult)
+
     result = df.nlargest(top_k, "vibe_score")
     return result, signals
 
@@ -503,7 +591,7 @@ def mood_board_recommendations(
     if df.empty:
         return pd.DataFrame()
 
-    # Build per-mood lookups: label → {genome_tags, tmdb_kws} (lowercased)
+    # Build per-mood config: label → {genome_tags, tmdb_kws, genres} (lowercased)
     mood_configs = []
     for label in selected_mood_labels:
         tile = MOOD_TILE_BY_LABEL.get(label)
@@ -511,14 +599,14 @@ def mood_board_recommendations(
             mood_configs.append({
                 "label": label,
                 "genome_tags": {t.lower() for t in tile["genome_tags"]},
-                "tmdb_kws": {k.lower() for k in tile["tmdb_kws"]},
-                "desc_words": {w.lower() for w in label.split() if len(w) > 3},
+                "tmdb_kws":    {k.lower() for k in tile["tmdb_kws"]},
+                "genres":      {g.lower() for g in tile.get("genres", [])},
             })
 
     if not mood_configs:
         return pd.DataFrame()
 
-    # Build enrichment lookup keyed by id
+    # Build enrichment lookups keyed by id (only for enriched columns)
     enr_tags = {}
     enr_kws = {}
     if enriched_df is not None:
@@ -532,38 +620,65 @@ def mood_board_recommendations(
                 enr_kws[eid] = {str(k).lower() for k in kws}
 
     def _compute_mood_match(row):
+        """Triple-signal weighted mood match: genre (40%) + keyword (40%) + tag (20%)."""
         tid = row["id"]
-        title_tags = enr_tags.get(tid, set())
-        title_kws = enr_kws.get(tid, set())
-        desc = str(row.get("description", "") or "").lower()
+        title_tags   = enr_tags.get(tid, set())
+        title_kws    = enr_kws.get(tid, set())
+        title_genres = {g.lower() for g in (row.get("genres") or [])
+                        if isinstance(g, str)}
 
         matched = []
+        total_score = 0.0
         for mc in mood_configs:
-            hit = (
-                bool(title_tags & mc["genome_tags"])
-                or bool(title_kws & mc["tmdb_kws"])
-                or any(w in desc for w in mc["desc_words"])
+            # Genre signal: fractional overlap — 100% of titles have genres
+            genre_hit = (
+                len(title_genres & mc["genres"]) / len(mc["genres"])
+                if mc["genres"] else 0.0
             )
-            if hit:
+            # Keyword signal: fractional overlap of TMDB keywords (59.3% coverage)
+            kw_hit = (
+                min(len(title_kws & mc["tmdb_kws"]) / len(mc["tmdb_kws"]), 1.0)
+                if mc["tmdb_kws"] else 0.0
+            )
+            # Tag signal: fractional overlap of genome tags (10.5% coverage)
+            tag_hit = (
+                min(len(title_tags & mc["genome_tags"]) / len(mc["genome_tags"]), 1.0)
+                if mc["genome_tags"] else 0.0
+            )
+
+            mood_hit = 0.40 * genre_hit + 0.40 * kw_hit + 0.20 * tag_hit
+            # Apply genre compatibility penalty for emotionally-typed moods
+            compat = _MOOD_GENRE_COMPAT.get(mc["label"])
+            if compat and mood_hit > 0:
+                has_required = bool(title_genres & compat["required_any"])
+                is_incompatible = bool(title_genres & compat["incompatible"])
+                if is_incompatible and not has_required:
+                    mood_hit *= _MOOD_GENRE_PENALTY
+            if mood_hit > 0:
                 matched.append(mc["label"])
-        return matched
+                total_score += mood_hit
 
-    df["matched_moods"] = df.apply(_compute_mood_match, axis=1)
-    df["mood_match_pct"] = df["matched_moods"].apply(
-        lambda m: len(m) / len(mood_configs)
-    )
+        normalized = total_score / len(mood_configs) if mood_configs else 0.0
+        return matched, normalized
 
-    # Quality score for tie-breaking
+    # Run match for each row (list comprehension avoids DataFrame.apply tuple pitfall)
+    mood_results = [_compute_mood_match(row) for _, row in df.iterrows()]
+    df["matched_moods"]  = [r[0] for r in mood_results]
+    df["mood_match_pct"] = [r[1] for r in mood_results]
+
+    # Quality score for tie-breaking — surfaces iconic titles
     df["quality_score"] = compute_quality_score(df)
     qs = df["quality_score"]
     df["quality_norm"] = (qs - qs.min()) / (qs.max() - qs.min() + 1e-9)
 
-    # Combined sort: 60% mood match + 40% quality (quality weight raised to surface iconic titles)
-    df["mood_score"] = 0.6 * df["mood_match_pct"] + 0.4 * df["quality_norm"]
+    # mood_match_pct is primary sort key; quality_norm is tiebreaker only
+    df["mood_score"] = 0.85 * df["mood_match_pct"] + 0.15 * df["quality_norm"]
 
-    # Keep only titles that match at least one mood (unless all moods return nothing)
+    # Keep only titles that match at least one mood; fallback to quality if none
     matched_df = df[df["mood_match_pct"] > 0]
     if matched_df.empty:
-        matched_df = df  # fallback: show quality-ranked results
+        matched_df = df  # fallback: quality-ranked results
 
-    return matched_df.nlargest(top_k, "mood_score")
+    return matched_df.sort_values(
+        ["mood_match_pct", "quality_norm"], ascending=[False, False]
+    ).head(top_k)

@@ -38,7 +38,7 @@ from src.data.loaders import (
     load_enriched_titles,
     load_umap_coords,
 )
-from src.ui.badges import platform_badges_html, section_header_html, styled_metric_card_html
+from src.ui.badges import page_header_html, platform_badges_html, section_header_html, styled_metric_card_html
 from src.ui.filters import apply_filters, render_sidebar_filters
 from src.ui.session import init_session_state
 
@@ -82,10 +82,9 @@ df = apply_filters(raw_df, filters)
 # ── page header ──────────────────────────────────────────────────────────────
 
 st.markdown(
-    section_header_html(
+    page_header_html(
         "Platform DNA",
         "What makes each platform unique — identity fingerprints, content landscape patterns, and your personal streaming match",
-        font_size="2em",
     ),
     unsafe_allow_html=True,
 )

@@ -965,7 +965,7 @@ def compute_enriched_platform_stats(
     }
     """
     result = {}
-    for key in ALL_PLATFORMS:
+    for key in ["merged"] + list(ALL_PLATFORMS):
         plat_df = get_platform_titles(all_df, key)
         n = max(len(plat_df), 1)
 

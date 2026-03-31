@@ -37,17 +37,16 @@ from src.analysis.network import (
     get_rankings,
     search_person,
 )
-from src.ui.badges import section_header_html, styled_metric_card_html, styled_banner_html
+from src.ui.badges import page_header_html, section_header_html, styled_metric_card_html, styled_banner_html
 from src.ui.session import init_session_state
 
 st.set_page_config(page_title="Cast & Crew Network", page_icon="📊", layout="wide")
 init_session_state()
 
 st.markdown(
-    section_header_html(
+    page_header_html(
         "Cast & Crew Network",
         "Explore collaboration networks, rankings, and influence across the streaming landscape.",
-        font_size="2em",
     ),
     unsafe_allow_html=True,
 )
