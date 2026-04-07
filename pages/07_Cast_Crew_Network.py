@@ -65,6 +65,142 @@ enriched = load_enriched_titles()
 has_network = not person_stats.empty and not edges_df.empty
 has_principals = not principals.empty and len(principals) > 1000
 
+# ─── Section 0: Collaboration Network Visualizer ────────────────────────────
+st.markdown(
+    section_header_html(
+        "Collaboration Network",
+        "Pick any person to explore their collaboration web — up to 2 degrees of separation.",
+    ),
+    unsafe_allow_html=True,
+)
+
+if has_network:
+    primary_plat_df = _precompute_primary_platform()
+    adj             = _build_adjacency(edges_df)
+
+    # Default seed = most connected node (highest degree in edges)
+    _default_seed = person_stats.loc[
+        person_stats["person_id"].isin(adj.keys()),
+        ["person_id", "name", "title_count"]
+    ].assign(_deg=lambda df: df["person_id"].map(lambda pid: len(adj.get(pid, {}))))\
+     .nlargest(1, "_deg")["person_id"].iloc[0]
+
+    # Build seed selectbox — show people who have at least one edge
+    _connected_ids = set(adj.keys())
+    _seed_pool = (
+        person_stats[person_stats["person_id"].isin(_connected_ids)]
+        .sort_values("title_count", ascending=False)
+        [["person_id", "name", "primary_role", "title_count"]]
+        .head(5000)          # limit autocomplete pool for performance
+    )
+
+    def _fmt_seed(pid):
+        r = _seed_pool[_seed_pool["person_id"] == pid]
+        if r.empty:
+            return pid
+        row = r.iloc[0]
+        return f"{row['name']}  ({row['primary_role'].title()}, {int(row['title_count'])} titles)"
+
+    col_seed, col_depth, col_max = st.columns([4, 1, 1])
+    with col_seed:
+        seed_pid = st.selectbox(
+            "Seed person",
+            options=_seed_pool["person_id"].tolist(),
+            format_func=_fmt_seed,
+            index=_seed_pool["person_id"].tolist().index(_default_seed)
+                  if _default_seed in _seed_pool["person_id"].tolist() else 0,
+            key="net_seed",
+            label_visibility="collapsed",
+            placeholder="Search for a person…",
+        )
+    with col_depth:
+        depth = st.selectbox("Degrees", [1, 2], index=1, key="net_depth")
+    with col_max:
+        max_nodes = st.selectbox("Max nodes", [50, 100, 150], index=1, key="net_max_nodes")
+
+    # Platform color legend
+    st.markdown(
+        " &nbsp;".join(
+            f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
+            f'background:{c};margin-right:3px;"></span>'
+            f'<span style="color:#aaa;font-size:0.78em;">{lbl}</span>'
+            for lbl, c in [
+                ("Netflix", _PLAT_COLORS["netflix"]),
+                ("Max",     _PLAT_COLORS["max"]),
+                ("Prime",   _PLAT_COLORS["prime"]),
+                ("Disney+", _PLAT_COLORS["disney"]),
+                ("Paramount+", _PLAT_COLORS["paramount"]),
+                ("Apple TV+",  _PLAT_COLORS["appletv"]),
+                ("Seed", "#FFD700"),
+            ]
+        ),
+        unsafe_allow_html=True,
+    )
+
+    # Build + render graph
+    with st.spinner("Building network…"):
+        node_ids, edge_triples = _bfs_subgraph(seed_pid, adj, max_nodes=max_nodes, max_hops=depth)
+        net_html = _render_network_html(node_ids, edge_triples, person_stats, primary_plat_df, seed_pid)
+
+    components.html(net_html, height=660, scrolling=False)
+
+    st.caption(
+        f"Showing **{len(node_ids)} nodes** and **{len(edge_triples)} edges** "
+        f"({depth}-hop neighbourhood). Node size = title count. Hover for details."
+    )
+
+    # ── Quick stats panel ────────────────────────────────────────────────────
+    st.markdown("**Quick Stats — select a node:**")
+    _visible_ids = list(node_ids)
+    _visible_names = person_stats[person_stats["person_id"].isin(_visible_ids)].sort_values("name")
+    _name_opts = _visible_names["person_id"].tolist()
+
+    selected_node = st.selectbox(
+        "Choose a person from the graph",
+        options=_name_opts,
+        format_func=lambda pid: _visible_names[_visible_names["person_id"] == pid].iloc[0]["name"]
+                                if not _visible_names[_visible_names["person_id"] == pid].empty else pid,
+        index=_name_opts.index(seed_pid) if seed_pid in _name_opts else 0,
+        key="net_stats_select",
+        label_visibility="collapsed",
+    )
+
+    if selected_node:
+        _row = person_stats[person_stats["person_id"] == selected_node]
+        _plat_row = primary_plat_df[primary_plat_df["person_id"] == selected_node]
+        if not _row.empty:
+            _r = _row.iloc[0]
+            _pplat = _plat_row.iloc[0]["primary_platform"] if not _plat_row.empty else "N/A"
+            _plat_label = PLATFORMS.get(_pplat, {}).get("name", _pplat)
+            _plat_color = _PLAT_COLORS.get(_pplat, _DEFAULT_NODE_COLOR)
+            career = (
+                f"{int(_r['career_start'])}–{int(_r['career_end'])}"
+                if pd.notna(_r.get("career_start")) and pd.notna(_r.get("career_end"))
+                else "N/A"
+            )
+            c1, c2, c3, c4, c5 = st.columns(5)
+            with c1:
+                st.markdown(styled_metric_card_html("Name", _r["name"]), unsafe_allow_html=True)
+            with c2:
+                st.markdown(styled_metric_card_html("Role", _r["primary_role"].title()), unsafe_allow_html=True)
+            with c3:
+                st.markdown(
+                    styled_metric_card_html(
+                        "Platform",
+                        f'<span style="color:{_plat_color}">{_plat_label}</span>',
+                    ),
+                    unsafe_allow_html=True,
+                )
+            with c4:
+                st.markdown(styled_metric_card_html("Titles", int(_r["title_count"])), unsafe_allow_html=True)
+            with c5:
+                st.markdown(styled_metric_card_html("Avg IMDb", f"{float(_r['avg_imdb']):.1f}"), unsafe_allow_html=True)
+
+else:
+    st.info("Network data required. Run `scripts/12_precompute_network.py` to generate collaboration graph.")
+
+st.divider()
+
 # ─── Section 1: Person Search & Profile ─────────────────────────────────────
 st.markdown(
     section_header_html("Person Search & Profile", "Search for any actor, director, writer, producer, composer, or cinematographer."),
