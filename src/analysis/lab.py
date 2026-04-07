@@ -129,10 +129,11 @@ def predict_title(model, features_dict, genre_names):
         if col in X.columns:
             X[col] = 1
 
-    # Set numeric features
-    for key in ["runtime", "release_year", "country_tier", "has_franchise", "budget_tier", "award_genre_avg"]:
-        if key in features_dict and key in X.columns:
-            X[key] = features_dict[key]
+    # Set numeric features — iterate all provided keys so new model features
+    # (age_cert_tier, decade, num_seasons, production_country_tier, etc.) are handled automatically
+    for key, val in features_dict.items():
+        if key != "genres" and key in X.columns:
+            X[key] = val
 
     # Predict
     prediction = model.predict(X)[0]
@@ -180,8 +181,13 @@ def get_talent_suggestions(principals_df, titles_df, genres, role="director", to
     if principals_df.empty:
         return pd.DataFrame()
 
-    # Map imdb_id to title info
-    title_info = titles_df.set_index("imdb_id")[["imdb_score", "genres", "title"]].to_dict("index")
+    # Map imdb_id to title info (drop duplicates first to avoid ValueError on set_index)
+    title_info = (
+        titles_df
+        .drop_duplicates(subset=["imdb_id"])
+        .set_index("imdb_id")[["imdb_score", "genres", "title"]]
+        .to_dict("index")
+    )
 
     # Filter principals by role
     role_df = principals_df[principals_df["category"] == role]

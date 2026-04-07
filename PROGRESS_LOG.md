@@ -1,5 +1,59 @@
 # Progress Log: Netflix + Max Merger Capstone
 
+## [2026-04-07] Interactive Lab — Complete Rebuild (Page 6)
+
+### Done
+
+#### scripts/10_train_greenlight_predictor.py (NEW)
+- Created new training script replacing `10_train_predictor.py` with spec-aligned features
+- Movie model features: 19 genre binaries, runtime, release_year, production_country_tier (0=Other/1=Europe+Asia/2=US+UK), age_cert_tier (G/PG=0, PG-13=1, R/NC-17=2), budget_tier (fixed $10M/$50M/$200M thresholds), has_franchise, award_genre_avg, decade
+- Show model features: same + num_seasons, excludes budget_tier and has_franchise
+- Filter: imdb_votes > 1,000 (removes low-credibility ratings)
+- GradientBoostingRegressor(n_estimators=200, max_depth=4, learning_rate=0.05, random_state=42)
+- Movie model: CV RMSE=0.891 vs Baseline 1.134 (21.4% improvement, 8,769 training titles)
+- Show model: CV RMSE=0.926 vs Baseline 1.039 (10.8% improvement, 2,811 training titles)
+- Saves `.cv_rmse_`, `.baseline_rmse_`, `.global_mean_`, `.training_size_`, `.feature_names_`, `.genre_names_` on model objects
+- Output: `models/greenlight_movie_predictor.pkl`, `models/greenlight_show_predictor.pkl`
+
+#### src/analysis/lab.py
+- Fixed `get_talent_suggestions` crash: added `.drop_duplicates(subset=["imdb_id"])` before `.set_index("imdb_id")` to prevent ValueError when imdb_id has duplicates
+- Generalized `predict_title` feature loop: replaced hardcoded key list with `for key, val in features_dict.items()` so new model features (age_cert_tier, decade, num_seasons, production_country_tier) are handled automatically
+
+#### pages/06_Interactive_Lab.py (complete rewrite)
+- **Tab 1: 🎬 Greenlight Studio** — movie/show toggle, full-width description input, 2-column input form (genre multiselect, runtime/year sliders, country/cert/budget inputs), "Consult the Studio" primary button
+  - Card 1 (Predicted Performance): large score + uncertainty band, HTML gradient gauge bar (red→amber→yellow→green→gold), colored Success Tier badge
+  - Card 2 (Most Similar Titles): TF-IDF cosine similarity on user description via cached title matrix, genre boost ×1.2, compact poster cards; greyed placeholder if no description
+  - Card 3 (Platform Fit): per-platform genre alignment %, quality alignment bonus, award density bonus for movies; Plotly horizontal bar with exact platform colors; "Best Home" badge with data-derived sentence
+  - Card 4 (Talent Recommendations): direct query of `person_stats.parquet` filtered by top_genre + title_count ≥ 2; directors and actors in sub-columns; graceful st.info() if unavailable
+  - Card 5 (Catalog Gap Signal): reads `acquisition_targets.parquet`, red/amber alert for High/Medium severity gaps, neutral insight if no gap; all numbers from actual data
+  - Model Card expander: training size, CV RMSE (3 decimal), baseline RMSE, improvement %, top 5 features with cleaned names
+- **Tab 2: 🎪 Franchise Explorer** — search bar + sort radio (Catalog Depth/Avg IMDb/Prestige/Recency) + min titles slider
+  - 3-column franchise grid: Bayesian-weighted avg IMDb badge (color-coded), platform ownership segmented bar (exact platform colors from config), "View Details" button per card
+  - Detail panel (below grid): horizontal scrollable poster strip (120px posters), Plotly quality timeline (marker size ∝ votes, star markers for award winners, 7.0 threshold line), platform ownership breakdown with strategic insight sentence, Franchise Health Score (0–100)
+  - Franchise Gaps section: flags franchises where competitor leads by ≥3 titles, shows top 5 with red-accented cards
+- **Tab 3: 🏆 Draft Room** — setup panel (AI strategy radio + rounds 5/8/12 + pool filter), active draft (2-column: title pool top-30 with Draft buttons, live scoreboard with avg IMDb/diversity/prestige), immediate AI picks after each user pick
+  - AI strategies: Quality Maximizer (highest draft_value), Genre Specialist (dominant genre by Bayesian avg), Prestige Chaser (award_wins then draft_value), Volume Hoarder (tmdb_popularity)
+  - Draft value formula: `bayesian_score × 0.5 + log1p(votes) × 0.3 + award_norm × 0.2`
+  - Results screen: 6-metric head-to-head table (Total/Avg IMDb/% above 7.0/Prestige/Genre Diversity/Freshness), teal winner highlight, Plotly Scatterpolar radar chart (user=gold, AI=teal), top-5 poster highlights each side, Draft Again + Export CSV buttons
+- Session state namespaced: `gs_*` for Greenlight Studio, `fe_*` for Franchise Explorer, `draft_*` for Draft Room — switching tabs never resets another tab's state
+- Footer: "Hypothetical merger for academic analysis only. Data is a snapshot (mid-2023). Netflix withdrew from this acquisition (Feb 26, 2026). All insights are illustrative, not prescriptive."
+
+### Files touched
+- `scripts/10_train_greenlight_predictor.py` (NEW)
+- `src/analysis/lab.py`
+- `pages/06_Interactive_Lab.py`
+
+### Test results
+- ✅ Greenlight Studio: Movie + Crime + Drama predicts 6.94 (Moderate), talent filter works without crash, platform fit bar renders
+- ✅ Franchise Explorer: James Bond Collection (21 titles), Batman franchise available; detail panel shows poster strip + timeline + health score
+- ✅ Draft Room: Quality Maximizer picks Breaking Bad first (draft_value=9.181); Prestige Chaser picks by award_wins; pool of 6,210 credible titles
+
+### Next
+- [ ] Final integration testing of all 8 pages end-to-end
+- [ ] Mark project as feature-complete
+
+---
+
 ## [2026-03-31] Round 5: page header redesign + Strategic Insights acquisition/scenario fixes
 
 ### Done
