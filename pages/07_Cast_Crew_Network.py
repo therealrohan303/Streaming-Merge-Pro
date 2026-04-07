@@ -1,13 +1,38 @@
 """
-Cast & Crew — Actor Wordle + Head-to-Head Arena
+Cast & Crew — Collaboration Network · Actor Wordle · Head-to-Head Arena
 """
 
+import os
 import random
+import tempfile
+from collections import deque
+
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 from pathlib import Path
 
 from src.data.loaders import load_all_platforms_credits, load_all_platforms_titles, load_person_stats
+
+# ── Platform colours (shared across all tabs) ─────────────────────────────────
+PLAT_COLORS = {
+    "netflix":   "#E50914",
+    "max":       "#002BE7",
+    "prime":     "#FF9900",
+    "disney":    "#8B31C7",
+    "paramount": "#F5C518",
+    "appletv":   "#888888",
+}
+PLAT_LABELS = {
+    "netflix":   "Netflix",
+    "max":       "Max",
+    "prime":     "Prime Video",
+    "disney":    "Disney+",
+    "paramount": "Paramount+",
+    "appletv":   "Apple TV+",
+}
+DEFAULT_COLOR = "#444466"
+SEED_COLOR    = "#FFFFFF"   # white star — distinct from all platform yellows
 
 
 def get_head_to_head_stats(pid, person_stats, credits_df, titles_df):
@@ -115,6 +140,188 @@ def get_cached_stats(pid, _person_stats, _credits, _titles):
     return get_head_to_head_stats(pid, _person_stats, _credits, _titles)
 
 
+# ── Network-specific loaders ───────────────────────────────────────────────────
+@st.cache_data
+def _load_network_edges() -> pd.DataFrame:
+    path = PROJECT_ROOT / "data" / "precomputed" / "network" / "edges.parquet"
+    df = pd.read_parquet(path)
+    df["person_a"] = df["person_a"].astype(str)
+    df["person_b"] = df["person_b"].astype(str)
+    return df
+
+@st.cache_data
+def _load_net_person_stats() -> pd.DataFrame:
+    df = pd.read_parquet(PERSON_STATS_PATH)
+    df["person_id"] = df["person_id"].astype(str)
+    return df
+
+@st.cache_data
+def _compute_primary_platform() -> pd.DataFrame:
+    credits = _load_credits()
+    titles  = _load_titles()
+    t_slim  = titles[["id", "platform"]].rename(columns={"id": "title_id"})
+    merged  = credits[["person_id", "title_id"]].merge(t_slim, on="title_id", how="left")
+    return (
+        merged.groupby(["person_id", "platform"]).size()
+        .reset_index(name="cnt")
+        .sort_values("cnt", ascending=False)
+        .drop_duplicates("person_id")[["person_id", "platform"]]
+        .rename(columns={"platform": "primary_platform"})
+    )
+
+@st.cache_data
+def _build_adjacency() -> dict:
+    edges_df = _load_network_edges()
+    adj: dict = {}
+    for pa, pb, w in zip(edges_df["person_a"], edges_df["person_b"], edges_df["weight"]):
+        adj.setdefault(pa, {})[pb] = int(w)
+        adj.setdefault(pb, {})[pa] = int(w)
+    return adj
+
+
+def _bfs_subgraph(seed_id: str, adj: dict, max_nodes: int = 100, max_hops: int = 2):
+    visited: dict = {seed_id: 0}
+    queue = deque([(seed_id, 0)])
+    edges: set = set()
+    while queue and len(visited) < max_nodes:
+        node, hop = queue.popleft()
+        if hop >= max_hops:
+            continue
+        for nbr, weight in sorted(adj.get(node, {}).items(), key=lambda x: -x[1]):
+            if len(visited) >= max_nodes:
+                break
+            if nbr not in visited:
+                visited[nbr] = hop + 1
+                queue.append((nbr, hop + 1))
+            if nbr in visited:
+                key = (min(node, nbr), max(node, nbr))
+                edges.add((*key, weight))
+    return set(visited.keys()), edges
+
+
+@st.cache_data(show_spinner=False)
+def _render_pyvis(node_ids: frozenset, edge_triples: frozenset, seed_id: str) -> str:
+    from pyvis.network import Network
+
+    person_stats = _load_net_person_stats()
+    primary_plat = _compute_primary_platform()
+    credits      = _load_credits()
+    titles       = _load_titles()
+
+    sub = person_stats[person_stats["person_id"].isin(node_ids)].copy()
+    sub = sub.drop_duplicates("person_id")
+    sub = sub.merge(primary_plat, on="person_id", how="left")
+    sub = sub.drop_duplicates("person_id")
+    sub["primary_platform"] = sub["primary_platform"].fillna("unknown")
+
+    # Deduplicate same name / two IDs — keep highest title_count
+    sub = sub.sort_values("title_count", ascending=False)
+    remap: dict = {}
+    for name in sub[sub["name"].duplicated(keep=False)]["name"].unique():
+        rows = sub[sub["name"] == name]
+        kept = rows.iloc[0]["person_id"]
+        for d in rows.iloc[1:]["person_id"].tolist():
+            remap[d] = kept
+    sub = sub.drop_duplicates("name", keep="first")
+
+    remapped: set = set()
+    for pa, pb, w in edge_triples:
+        ra, rb = remap.get(pa, pa), remap.get(pb, pb)
+        if ra == rb:
+            continue
+        remapped.add((min(ra, rb), max(ra, rb), w))
+    edge_triples = remapped
+    node_ids     = set(sub["person_id"].tolist())
+
+    # Subgraph-aware platform: colour each node by the platform of titles
+    # it actually shares with neighbours in this subgraph (not globally).
+    t_plat_map = (
+        titles[["id", "platform"]].rename(columns={"id": "title_id"})
+        .dropna(subset=["platform"])
+        .set_index("title_id")["platform"].to_dict()
+    )
+    sub_credits = credits[credits["person_id"].isin(node_ids)][["person_id", "title_id"]]
+    person_title_sets: dict = (
+        sub_credits.groupby("person_id")["title_id"].apply(set).to_dict()
+    )
+    sub_adj: dict = {}
+    for pa, pb, _ in edge_triples:
+        sub_adj.setdefault(pa, set()).add(pb)
+        sub_adj.setdefault(pb, set()).add(pa)
+
+    def subgraph_platform(pid: str):
+        my_titles = person_title_sets.get(pid, set())
+        plat_counts: dict = {}
+        for nbr in sub_adj.get(pid, set()):
+            for tid in my_titles & person_title_sets.get(nbr, set()):
+                plat = t_plat_map.get(tid)
+                if plat:
+                    plat_counts[plat] = plat_counts.get(plat, 0) + 1
+        return max(plat_counts, key=plat_counts.get) if plat_counts else None
+
+    tc_max = sub["title_count"].max()
+    tc_min = sub["title_count"].min()
+
+    def node_size(tc):
+        return 22 if tc_max == tc_min else 10 + (tc - tc_min) / (tc_max - tc_min) * 38
+
+    net = Network(height="650px", width="100%",
+                  bgcolor="#1E1E2E", font_color="#cccccc", directed=False)
+    net.barnes_hut(gravity=-9000, central_gravity=0.35,
+                   spring_length=160, spring_strength=0.05, damping=0.09)
+
+    for _, row in sub.iterrows():
+        pid     = row["person_id"]
+        is_seed = pid == seed_id
+        sg_plat  = subgraph_platform(pid)
+        plat_key = sg_plat if sg_plat else row["primary_platform"]
+        color    = PLAT_COLORS.get(plat_key, DEFAULT_COLOR)
+        plat_lbl = PLAT_LABELS.get(plat_key, plat_key.title() if plat_key else "Unknown")
+        tooltip  = (
+            f"<b>{row['name']}</b><br>"
+            f"Role: {str(row['primary_role']).title()}<br>"
+            f"Platform: {plat_lbl}<br>"
+            f"Titles: {int(row['title_count'])}<br>"
+            f"Avg IMDb: {float(row['avg_imdb']):.1f}"
+        )
+        net.add_node(
+            pid, label=row["name"], title=tooltip,
+            size=node_size(row["title_count"]) * (1.4 if is_seed else 1),
+            shape="star" if is_seed else "dot",
+            color={"background": SEED_COLOR if is_seed else color,
+                   "border":     SEED_COLOR if is_seed else color,
+                   "highlight":  {"background": "#cccccc" if is_seed else "#FFD700",
+                                  "border": "#ffffff"}},
+            borderWidth=4 if is_seed else 1,
+            font={"size": 11, "color": "#dddddd"},
+        )
+
+    for pa, pb, w in edge_triples:
+        if pa in node_ids and pb in node_ids:
+            net.add_edge(pa, pb, value=max(1, w), title=f"Shared titles: {w}",
+                         color={"color": "rgba(255,255,255,0.12)",
+                                "highlight": "rgba(255,255,255,0.6)"})
+
+    net.set_options("""{
+      "nodes": {"shadow": {"enabled": true, "size": 8}},
+      "edges": {"smooth": {"type": "continuous"}},
+      "physics": {
+        "enabled": true,
+        "stabilization": {"enabled": true, "iterations": 150, "updateInterval": 25}
+      },
+      "interaction": {"hover": true, "tooltipDelay": 80,
+                      "navigationButtons": true, "keyboard": true}
+    }""")
+
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".html", delete=False) as f:
+        net.save_graph(f.name)
+        tmp = f.name
+    with open(tmp, "r", encoding="utf-8") as f:
+        html = f.read()
+    os.unlink(tmp)
+    return html
+
+
 # ── Wordle helpers ─────────────────────────────────────────────────────────────
 MAX_GUESSES = 6
 CLUE_LABELS = [
@@ -212,6 +419,11 @@ credits      = _load_credits()
 titles       = _load_titles()
 arena_pool   = person_stats[person_stats["title_count"] >= 3].copy()
 
+# Network-specific (loaded once, cached)
+net_person_stats = _load_net_person_stats()
+adj              = _build_adjacency()
+_role_lookup     = net_person_stats.set_index("person_id")["primary_role"].to_dict()
+
 # ── Session state ──────────────────────────────────────────────────────────────
 if "seed" not in st.session_state:
     st.session_state.seed = random.randint(0, 99999)
@@ -228,15 +440,136 @@ if "lost" not in st.session_state:
 st.markdown("""
 <div style="padding:12px 0 4px;">
     <div style="font-size:2em;font-weight:900;color:#fff;">🎬 Cast &amp; Crew</div>
-    <div style="color:#888;font-size:0.9em;margin-top:2px;">Actor Wordle · Head-to-Head Arena</div>
+    <div style="color:#888;font-size:0.9em;margin-top:2px;">Collaboration Network · Actor Wordle · Head-to-Head Arena</div>
 </div>
 """, unsafe_allow_html=True)
 
-tab_wordle, tab_arena = st.tabs(["🎬 Actor Wordle", "⚔️ Head-to-Head Arena"])
+tab_net, tab_wordle, tab_arena = st.tabs(["🕸️ Collaboration Network", "🎬 Actor Wordle", "⚔️ Head-to-Head Arena"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  TAB 1: ACTOR WORDLE
+#  TAB 1: COLLABORATION NETWORK
+# ══════════════════════════════════════════════════════════════════════════════
+
+ALL_ROLES = ["ACTOR", "DIRECTOR", "WRITER", "PRODUCER", "COMPOSER", "CINEMATOGRAPHER", "EDITOR"]
+
+with tab_net:
+    st.markdown("##### Pick a person — explore their collaboration web up to 2 degrees of separation")
+
+    connected_ids = set(adj.keys())
+    default_seed  = (
+        net_person_stats[net_person_stats["person_id"].isin(connected_ids)]
+        .assign(_deg=lambda df: df["person_id"].map(lambda p: len(adj.get(p, {}))))
+        .nlargest(1, "_deg")["person_id"].iloc[0]
+    )
+
+    seed_pool = (
+        net_person_stats[net_person_stats["person_id"].isin(connected_ids)]
+        .sort_values("title_count", ascending=False)
+        [["person_id", "name", "primary_role", "title_count"]]
+        .head(5000)
+    )
+    seed_ids = seed_pool["person_id"].tolist()
+    _seed_label_map = {
+        row.person_id: f"{row.name}  ({str(row.primary_role).title()}, {int(row.title_count)} titles)"
+        for row in seed_pool.itertuples(index=False)
+    }
+
+    col_s, col_d, col_m = st.columns([4, 1, 1])
+    with col_s:
+        seed_pid = st.selectbox(
+            "Seed person", options=seed_ids,
+            format_func=lambda pid: _seed_label_map.get(pid, pid),
+            index=seed_ids.index(default_seed) if default_seed in seed_ids else 0,
+            placeholder="Type a name to search…", label_visibility="collapsed", key="net_seed",
+        )
+    with col_d:
+        depth = st.selectbox("Degrees", [1, 2], index=1, key="net_depth")
+    with col_m:
+        max_nodes = st.selectbox("Max nodes", [50, 100, 150], index=1, key="net_max")
+
+    role_filter = st.multiselect(
+        "Filter by role", options=ALL_ROLES, default=["ACTOR", "DIRECTOR"],
+        format_func=lambda r: r.title(), key="net_roles",
+    )
+    if not role_filter:
+        role_filter = ALL_ROLES
+
+    # Legend
+    st.markdown(
+        " &nbsp; ".join(
+            f'<span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
+            f'background:{c};margin-right:3px;vertical-align:middle;"></span>'
+            f'<span style="color:#aaa;font-size:0.78em;">{lbl}</span>'
+            for lbl, c in [
+                ("Netflix", PLAT_COLORS["netflix"]), ("Max", PLAT_COLORS["max"]),
+                ("Prime Video", PLAT_COLORS["prime"]), ("Disney+", PLAT_COLORS["disney"]),
+                ("Paramount+", PLAT_COLORS["paramount"]), ("Apple TV+", PLAT_COLORS["appletv"]),
+            ]
+        )
+        + " &nbsp; "
+        + '<span style="color:#fff;font-size:1em;vertical-align:middle;">★</span>'
+          '<span style="color:#aaa;font-size:0.78em;margin-left:3px;">Seed (white star)</span>',
+        unsafe_allow_html=True,
+    )
+
+    with st.spinner("Building network…"):
+        node_ids, edge_triples = _bfs_subgraph(seed_pid, adj, max_nodes=max_nodes, max_hops=depth)
+        selected_roles  = set(role_filter)
+        filtered_nodes  = {
+            pid for pid in node_ids
+            if pid == seed_pid or _role_lookup.get(pid, "").upper() in selected_roles
+        }
+        filtered_edges  = {(pa, pb, w) for pa, pb, w in edge_triples
+                           if pa in filtered_nodes and pb in filtered_nodes}
+        net_html = _render_pyvis(frozenset(filtered_nodes), frozenset(filtered_edges), seed_pid)
+
+    components.html(net_html, height=670, scrolling=False)
+    st.caption(
+        f"**{len(filtered_nodes)} nodes** · **{len(filtered_edges)} edges** · "
+        f"{depth}-hop neighbourhood · Node size = title count · Hover for details · "
+        f"Color = platform of shared titles"
+    )
+
+    st.markdown("---")
+    st.markdown("**Quick Stats — pick any visible node:**")
+    visible = net_person_stats[net_person_stats["person_id"].isin(filtered_nodes)].sort_values("name")
+    vis_ids = visible["person_id"].tolist()
+    _net_ps_idx = net_person_stats.set_index("person_id")
+    _primary_plat_map = _compute_primary_platform().set_index("person_id")["primary_platform"].to_dict()
+
+    selected_node = st.selectbox(
+        "Pick a node", options=vis_ids,
+        format_func=lambda pid: visible[visible["person_id"] == pid].iloc[0]["name"]
+                                if not visible[visible["person_id"] == pid].empty else pid,
+        index=vis_ids.index(seed_pid) if seed_pid in vis_ids else 0,
+        label_visibility="collapsed", key="net_stats",
+    )
+    if selected_node:
+        r      = _net_ps_idx.loc[selected_node]
+        pplat  = _primary_plat_map.get(selected_node, "N/A")
+        pcolor = PLAT_COLORS.get(pplat, DEFAULT_COLOR)
+        plabel = PLAT_LABELS.get(pplat, pplat)
+        conns  = len(adj.get(selected_node, {}))
+        c1, c2, c3, c4, c5 = st.columns(5)
+        for col, lbl, val in [
+            (c1, "Name",        r["name"]),
+            (c2, "Role",        str(r["primary_role"]).title()),
+            (c3, "Platform",    f'<span style="color:{pcolor}">{plabel}</span>'),
+            (c4, "Titles",      int(r["title_count"])),
+            (c5, "Connections", conns),
+        ]:
+            col.markdown(
+                f'<div style="background:#1E1E2E;border:1px solid #333;border-radius:8px;'
+                f'padding:10px 14px;text-align:center;">'
+                f'<div style="color:#666;font-size:0.7em;text-transform:uppercase;letter-spacing:1px;">{lbl}</div>'
+                f'<div style="color:#fff;font-size:1em;font-weight:600;margin-top:4px;">{val}</div></div>',
+                unsafe_allow_html=True,
+            )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  TAB 2: ACTOR WORDLE
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_wordle:
@@ -410,7 +743,7 @@ with tab_wordle:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  TAB 2: HEAD-TO-HEAD ARENA
+#  TAB 3: HEAD-TO-HEAD ARENA
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_arena:
