@@ -764,6 +764,8 @@ with tab_arena:
         sample = arena_pool.sample(2, random_state=random.randint(0, 99999))
         st.session_state["arena_a"] = sample.iloc[0]["person_id"]
         st.session_state["arena_b"] = sample.iloc[1]["person_id"]
+        st.session_state["arena_search_a"] = sample.iloc[0]["name"]
+        st.session_state["arena_search_b"] = sample.iloc[1]["name"]
 
     _arena_ids   = arena_pool["person_id"].tolist()
     _arena_names = arena_pool.set_index("person_id")["name"].to_dict()
