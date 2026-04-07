@@ -347,9 +347,10 @@ with tab_wordle:
         st.divider()
 
     with prev_c:
-        if guesses:
+        wrong_guesses = guesses[:-1] if st.session_state.won else guesses
+        if wrong_guesses:
             st.markdown("### ❌ Previous Guesses")
-            for g in guesses:
+            for g in wrong_guesses:
                 st.markdown(
                     f'<div style="background:#2d0000;border:1px solid #7f0000;border-radius:6px;'
                     f'padding:8px 14px;margin-bottom:6px;color:#ff6b6b;">✗ &nbsp; {g}</div>',
