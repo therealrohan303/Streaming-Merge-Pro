@@ -114,7 +114,7 @@ GREENLIGHT_SHOW_MODEL = MODELS_DIR / "greenlight_show_predictor.pkl"
 
 # Network Analysis
 NETWORK_MIN_TITLES = 3    # Min titles for a person to be included in network
-NETWORK_MIN_EDGE_WEIGHT = 2  # Min shared titles for an edge
+NETWORK_MIN_EDGE_WEIGHT = 1  # Min shared titles for an edge
 
 # =============================================================================
 # UI CONFIGURATION

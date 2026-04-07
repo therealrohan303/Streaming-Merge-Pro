@@ -193,18 +193,22 @@ def bfs_subgraph(seed_id: str, adj: dict, max_nodes: int = 100, max_hops: int = 
     return set(visited.keys()), edges
 
 
+SEED_COLOR = "#FFFFFF"  # white — clearly distinct from all platform yellows
+
 @st.cache_data(show_spinner=False)
 def render_pyvis(node_ids: frozenset, edge_triples: frozenset, seed_id: str) -> str:
     from pyvis.network import Network
 
     _, person_stats = load_network_data()
     primary_plat    = compute_primary_platform()
+    credits         = _load_credits()
+    titles          = _load_titles()
 
     sub = person_stats[person_stats["person_id"].isin(node_ids)].copy()
     sub = sub.drop_duplicates("person_id")
     sub = sub.merge(primary_plat, on="person_id", how="left")
     sub = sub.drop_duplicates("person_id")
-    sub["primary_platform"] = sub["primary_platform"].fillna("netflix")
+    sub["primary_platform"] = sub["primary_platform"].fillna("unknown")
 
     # Deduplicate by name (same person, two source IDs) — keep highest title_count
     sub = sub.sort_values("title_count", ascending=False)
@@ -225,6 +229,37 @@ def render_pyvis(node_ids: frozenset, edge_triples: frozenset, seed_id: str) -> 
     edge_triples = remapped
     node_ids     = set(sub["person_id"].tolist())
 
+    # ── Subgraph-aware platform: color each node by the platform of the titles
+    #    it *actually shares with neighbors in this subgraph*, not globally.
+    t_plat_map = (
+        titles[["id", "platform"]]
+        .rename(columns={"id": "title_id"})
+        .dropna(subset=["platform"])
+        .set_index("title_id")["platform"]
+        .to_dict()
+    )
+    sub_credits = credits[credits["person_id"].isin(node_ids)][["person_id", "title_id"]]
+    person_title_sets: dict = (
+        sub_credits.groupby("person_id")["title_id"]
+        .apply(set)
+        .to_dict()
+    )
+    # Build adjacency within filtered subgraph
+    sub_adj: dict = {}
+    for pa, pb, _ in edge_triples:
+        sub_adj.setdefault(pa, set()).add(pb)
+        sub_adj.setdefault(pb, set()).add(pa)
+
+    def subgraph_platform(pid: str):
+        my_titles = person_title_sets.get(pid, set())
+        plat_counts: dict = {}
+        for nbr in sub_adj.get(pid, set()):
+            for tid in my_titles & person_title_sets.get(nbr, set()):
+                plat = t_plat_map.get(tid)
+                if plat:
+                    plat_counts[plat] = plat_counts.get(plat, 0) + 1
+        return max(plat_counts, key=plat_counts.get) if plat_counts else None
+
     tc_max, tc_min = sub["title_count"].max(), sub["title_count"].min()
 
     def node_size(tc):
@@ -237,21 +272,29 @@ def render_pyvis(node_ids: frozenset, edge_triples: frozenset, seed_id: str) -> 
 
     for _, row in sub.iterrows():
         pid     = row["person_id"]
-        color   = PLAT_COLORS.get(row["primary_platform"], DEFAULT_COLOR)
         is_seed = pid == seed_id
+
+        # Use subgraph-shared-title platform; fall back to global primary
+        sg_plat  = subgraph_platform(pid)
+        plat_key = sg_plat if sg_plat else row["primary_platform"]
+        color    = PLAT_COLORS.get(plat_key, DEFAULT_COLOR)
+        plat_lbl = PLAT_LABELS.get(plat_key, plat_key.title() if plat_key else "Unknown")
+
         tooltip = (
             f"<b>{row['name']}</b><br>"
             f"Role: {str(row['primary_role']).title()}<br>"
-            f"Platform: {PLAT_LABELS.get(row['primary_platform'], row['primary_platform'])}<br>"
+            f"Platform: {plat_lbl}{'*' if not sg_plat else ''}<br>"
             f"Titles: {int(row['title_count'])}<br>"
             f"Avg IMDb: {float(row['avg_imdb']):.1f}"
         )
         net.add_node(pid, label=row["name"], title=tooltip,
-                     size=node_size(row["title_count"]),
-                     color={"background": color,
-                            "border": "#FFD700" if is_seed else color,
-                            "highlight": {"background": "#FFD700", "border": "#ffffff"}},
-                     borderWidth=3 if is_seed else 1,
+                     size=node_size(row["title_count"]) * (1.4 if is_seed else 1),
+                     shape="star" if is_seed else "dot",
+                     color={"background": SEED_COLOR if is_seed else color,
+                            "border":     SEED_COLOR if is_seed else color,
+                            "highlight":  {"background": "#cccccc" if is_seed else "#FFD700",
+                                           "border": "#ffffff"}},
+                     borderWidth=4 if is_seed else 1,
                      font={"size": 11, "color": "#dddddd"})
 
     for pa, pb, w in edge_triples:
@@ -647,9 +690,12 @@ with tab_net:
                 ("Netflix", PLAT_COLORS["netflix"]), ("Max", PLAT_COLORS["max"]),
                 ("Prime Video", PLAT_COLORS["prime"]), ("Disney+", PLAT_COLORS["disney"]),
                 ("Paramount+", PLAT_COLORS["paramount"]), ("Apple TV+", PLAT_COLORS["appletv"]),
-                ("⭐ Seed", "#FFD700"),
             ]
-        ), unsafe_allow_html=True,
+        )
+        + " &nbsp; "
+        + '<span style="color:#fff;font-size:1em;vertical-align:middle;">★</span>'
+          '<span style="color:#aaa;font-size:0.78em;margin-left:3px;">Seed (white star)</span>',
+        unsafe_allow_html=True,
     )
 
     with st.spinner("Building network…"):
