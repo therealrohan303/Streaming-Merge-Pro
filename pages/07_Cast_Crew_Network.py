@@ -95,7 +95,8 @@ def compute_primary_platform():
 
 
 @st.cache_data
-def build_adjacency(edges_df: pd.DataFrame) -> dict:
+def build_adjacency() -> dict:
+    edges_df, _ = load_network_data()
     adj: dict = {}
     for pa, pb, w in zip(edges_df["person_a"], edges_df["person_b"], edges_df["weight"]):
         adj.setdefault(pa, {})[pb] = int(w)
@@ -196,10 +197,11 @@ def bfs_subgraph(seed_id: str, adj: dict, max_nodes: int = 100, max_hops: int = 
 
 
 @st.cache_data(show_spinner=False)
-def render_pyvis(node_ids: frozenset, edge_triples: frozenset,
-                 person_stats: pd.DataFrame, primary_plat: pd.DataFrame,
-                 seed_id: str) -> str:
+def render_pyvis(node_ids: frozenset, edge_triples: frozenset, seed_id: str) -> str:
     from pyvis.network import Network
+
+    _, person_stats = load_network_data()
+    primary_plat    = compute_primary_platform()
 
     sub = person_stats[person_stats["person_id"].isin(node_ids)].copy()
     sub = sub.drop_duplicates("person_id")
@@ -543,7 +545,7 @@ def filter_candidates(mystery: dict, num_clues_shown: int, people: pd.DataFrame)
 with st.spinner("Loading data…"):
     edges_df, person_stats = load_network_data()
     primary_plat           = compute_primary_platform()
-    adj                    = build_adjacency(edges_df)
+    adj                    = build_adjacency()
     arena_pool             = build_arena_pool()
     wordle_people          = load_wordle_people()
     title_lookup           = load_person_title_lookup()
@@ -659,7 +661,7 @@ with tab_net:
         filtered_edges = {(pa, pb, w) for pa, pb, w in edge_triples
                           if pa in filtered_nodes and pb in filtered_nodes}
 
-        net_html = render_pyvis(frozenset(filtered_nodes), frozenset(filtered_edges), person_stats, primary_plat, seed_pid)
+        net_html = render_pyvis(frozenset(filtered_nodes), frozenset(filtered_edges), seed_pid)
 
     components.html(net_html, height=670, scrolling=False)
     st.caption(
