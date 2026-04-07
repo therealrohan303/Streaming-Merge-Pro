@@ -749,11 +749,12 @@ with tab_cw:
         )
         if st.button("Submit Guess", type="primary", disabled=not _guess_input, key="aw_submit"):
             _guess = _guess_input.strip()
-            st.session_state.aw_guesses = st.session_state.aw_guesses + [_guess]
-            if _guess.lower() == mystery["name"].lower():
-                st.session_state.aw_won = True
-            elif len(st.session_state.aw_guesses) >= AW_MAX_GUESSES:
-                st.session_state.aw_lost = True
+            if _guess:
+                st.session_state.aw_guesses = st.session_state.aw_guesses + [_guess]
+                if _guess.lower() == mystery["name"].lower():
+                    st.session_state.aw_won = True
+                elif len(st.session_state.aw_guesses) >= AW_MAX_GUESSES:
+                    st.session_state.aw_lost = True
 
         st.divider()
 
