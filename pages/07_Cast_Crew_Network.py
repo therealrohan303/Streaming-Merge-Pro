@@ -631,7 +631,7 @@ with tab_net:
         max_nodes = st.selectbox("Max nodes", [50, 100, 150], index=1, key="net_max")
 
     role_filter = st.multiselect(
-        "Filter by role", options=ALL_ROLES, default=ALL_ROLES,
+        "Filter by role", options=ALL_ROLES, default=["ACTOR", "DIRECTOR"],
         format_func=lambda r: r.title(), key="net_roles",
     )
     if not role_filter:
