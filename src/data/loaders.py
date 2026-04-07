@@ -49,33 +49,33 @@ def deduplicate_titles(df: pd.DataFrame) -> pd.DataFrame:
     return deduped
 
 
-@st.cache_data
+@st.cache_resource
 def load_merged_titles() -> pd.DataFrame:
     return _fix_list_cols(pd.read_parquet(PROCESSED_DIR / "merged_titles.parquet"))
 
 
-@st.cache_data
+@st.cache_resource
 def load_merged_credits() -> pd.DataFrame:
     return pd.read_parquet(PROCESSED_DIR / "merged_credits.parquet")
 
 
-@st.cache_data
+@st.cache_resource
 def load_all_platforms_titles() -> pd.DataFrame:
     return _fix_list_cols(pd.read_parquet(PROCESSED_DIR / "all_platforms_titles.parquet"))
 
 
-@st.cache_data
+@st.cache_resource
 def load_all_platforms_credits() -> pd.DataFrame:
     return pd.read_parquet(PROCESSED_DIR / "all_platforms_credits.parquet")
 
 
-@st.cache_data
+@st.cache_resource
 def load_similarity_data() -> pd.DataFrame:
     """Load precomputed TF-IDF similarity top-K table."""
     return pd.read_parquet(PRECOMPUTED_DIR / "similarity" / "tfidf_top_k.parquet")
 
 
-@st.cache_data
+@st.cache_resource
 def load_umap_coords() -> pd.DataFrame:
     """Load precomputed UMAP 2D coordinates."""
     return pd.read_parquet(PRECOMPUTED_DIR / "dimensionality_reduction" / "umap_coords.parquet")
@@ -101,7 +101,7 @@ def load_platform_profiles() -> dict:
     return profiles
 
 
-@st.cache_data
+@st.cache_resource
 def load_enriched_titles() -> pd.DataFrame:
     """Load enriched titles. Falls back to base all_platforms_titles if enriched file absent."""
     path = ENRICHED_DIR / "titles_enriched.parquet"
@@ -134,7 +134,7 @@ def load_genome_vectors():
     return None, None
 
 
-@st.cache_data
+@st.cache_resource
 def load_network_edges() -> pd.DataFrame:
     """Load precomputed collaboration network edges."""
     path = PRECOMPUTED_DIR / "network" / "edges.parquet"
@@ -143,7 +143,7 @@ def load_network_edges() -> pd.DataFrame:
     return pd.DataFrame(columns=["person_a", "person_b", "weight"])
 
 
-@st.cache_data
+@st.cache_resource
 def load_person_stats() -> pd.DataFrame:
     """Load precomputed per-person statistics."""
     path = PRECOMPUTED_DIR / "network" / "person_stats.parquet"
@@ -172,25 +172,27 @@ def load_greenlight_model(model_type: str):
     return None
 
 
+@st.cache_data
 def get_titles_for_view(platform_view: str) -> pd.DataFrame:
     """Route to the correct loader based on platform view.
 
     platform_view: "merged", "netflix", "max", or "all_platforms"
+    Returns a copy so callers can safely mutate it.
     """
     if platform_view == "all_platforms":
-        return load_all_platforms_titles()
+        return load_all_platforms_titles().copy()
     df = load_merged_titles()
     if platform_view in ("netflix", "max"):
         return df[df["platform"] == platform_view].reset_index(drop=True)
-    # "merged" → return full merged dataset
-    return df
+    return df.copy()
 
 
+@st.cache_data
 def get_credits_for_view(platform_view: str) -> pd.DataFrame:
     """Route to the correct credits loader based on platform view."""
     if platform_view == "all_platforms":
-        return load_all_platforms_credits()
+        return load_all_platforms_credits().copy()
     df = load_merged_credits()
     if platform_view in ("netflix", "max"):
         return df[df["platform"] == platform_view].reset_index(drop=True)
-    return df
+    return df.copy()
