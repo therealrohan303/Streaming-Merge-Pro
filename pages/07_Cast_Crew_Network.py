@@ -110,20 +110,13 @@ def build_arena_pool() -> pd.DataFrame:
     credits         = _load_credits()
     titles          = _load_titles()
 
-    person_stats = person_stats.copy()
-
     pool = person_stats[person_stats["title_count"] >= ARENA_MIN_TITLES].copy()
 
     t_slim  = titles[["id", "platform", "imdb_score", "genres"]].rename(columns={"id": "title_id"})
     cmerged = credits[["person_id", "title_id"]].merge(t_slim, on="title_id", how="left")
 
-    primary_plat = (
-        cmerged.groupby(["person_id", "platform"]).size()
-        .reset_index(name="cnt").sort_values("cnt", ascending=False)
-        .drop_duplicates("person_id")[["person_id", "platform"]]
-        .rename(columns={"platform": "primary_platform"})
-    )
-    pool = pool.merge(primary_plat, on="person_id", how="left")
+    # Reuse already-cached primary_platform instead of recomputing
+    pool = pool.merge(compute_primary_platform(), on="person_id", how="left")
 
     best_title = (
         cmerged.groupby("person_id")["imdb_score"].max()
@@ -155,15 +148,19 @@ def build_arena_pool() -> pd.DataFrame:
         pool = pool.merge(pc, on="person_id", how="left")
         pool[col_name] = pool[col_name].fillna(0).astype(int)
 
-    pool["career_span"] = pool.apply(
-        lambda r: int(r["career_end"]) - int(r["career_start"])
-        if pd.notna(r.get("career_start")) and pd.notna(r.get("career_end")) and r["career_end"] > 0 else 0,
-        axis=1,
+    # Vectorized career_span — avoids slow row-by-row apply
+    valid = (
+        pool["career_start"].notna() & pool["career_end"].notna() & (pool["career_end"] > 0)
     )
-    pool["career_label"] = pool.apply(
-        lambda r: f"{int(r['career_start'])}–{int(r['career_end'])}"
-        if pd.notna(r.get("career_start")) and pd.notna(r.get("career_end")) and r["career_end"] > 0 else "N/A",
-        axis=1,
+    pool["career_span"] = 0
+    pool.loc[valid, "career_span"] = (
+        pool.loc[valid, "career_end"].astype(int) - pool.loc[valid, "career_start"].astype(int)
+    )
+    pool["career_label"] = "N/A"
+    pool.loc[valid, "career_label"] = (
+        pool.loc[valid, "career_start"].astype(int).astype(str)
+        + "–"
+        + pool.loc[valid, "career_end"].astype(int).astype(str)
     )
 
     pool["genre_diversity"]  = pool["genre_diversity"].fillna(0).astype(int)
@@ -488,7 +485,7 @@ def pick_mystery(seed: int, people: pd.DataFrame, title_lookup: dict) -> dict:
 
 
 def filter_candidates(mystery: dict, num_clues_shown: int, people: pd.DataFrame) -> list:
-    filtered = people.copy()
+    filtered = people
 
     # Clue 2: title count bucket
     if num_clues_shown >= 2:
@@ -550,6 +547,12 @@ with st.spinner("Loading data…"):
     wordle_people          = load_wordle_people()
     title_lookup           = load_person_title_lookup()
 
+# Pre-build lookup structures so format functions are O(1) per call instead of O(n)
+_person_stats_idx = person_stats.set_index("person_id")
+_arena_pool_idx   = arena_pool.set_index("person_id")
+_primary_plat_map = primary_plat.set_index("person_id")["primary_platform"].to_dict()
+_role_lookup      = person_stats.set_index("person_id")["primary_role"].to_dict()
+
 # Actor Wordle session state
 if "aw_seed" not in st.session_state:
     st.session_state.aw_seed = random.randint(0, 99999)
@@ -605,13 +608,13 @@ with tab_net:
         .head(5000)
     )
     seed_ids = seed_pool["person_id"].tolist()
+    _seed_label_map = {
+        row.person_id: f"{row.name}  ({str(row.primary_role).title()}, {int(row.title_count)} titles)"
+        for row in seed_pool.itertuples(index=False)
+    }
 
     def fmt_seed(pid):
-        r = seed_pool[seed_pool["person_id"] == pid]
-        if r.empty:
-            return pid
-        row = r.iloc[0]
-        return f"{row['name']}  ({str(row['primary_role']).title()}, {int(row['title_count'])} titles)"
+        return _seed_label_map.get(pid, pid)
 
     ALL_ROLES = ["ACTOR", "DIRECTOR", "WRITER", "PRODUCER", "COMPOSER", "CINEMATOGRAPHER", "EDITOR"]
 
@@ -653,10 +656,9 @@ with tab_net:
         node_ids, edge_triples = bfs_subgraph(seed_pid, adj, max_nodes=max_nodes, max_hops=depth)
 
         selected_roles = set(role_filter)
-        role_lookup    = person_stats.set_index("person_id")["primary_role"].to_dict()
         filtered_nodes = {
             pid for pid in node_ids
-            if pid == seed_pid or role_lookup.get(pid, "").upper() in selected_roles
+            if pid == seed_pid or _role_lookup.get(pid, "").upper() in selected_roles
         }
         filtered_edges = {(pa, pb, w) for pa, pb, w in edge_triples
                           if pa in filtered_nodes and pb in filtered_nodes}
@@ -684,9 +686,8 @@ with tab_net:
     )
 
     if selected:
-        r        = person_stats[person_stats["person_id"] == selected].iloc[0]
-        pp_row   = primary_plat[primary_plat["person_id"] == selected]
-        pplat    = pp_row.iloc[0]["primary_platform"] if not pp_row.empty else "N/A"
+        r        = _person_stats_idx.loc[selected]
+        pplat    = _primary_plat_map.get(selected, "N/A")
         pcolor   = PLAT_COLORS.get(pplat, DEFAULT_COLOR)
         plabel   = PLAT_LABELS.get(pplat, pplat)
         conns    = len(adj.get(selected, {}))
@@ -857,14 +858,17 @@ with tab_arena:
     </div>""", unsafe_allow_html=True)
 
     arena_pids = arena_pool["person_id"].tolist()
+    _arena_label_map = {
+        row.person_id: (
+            f"{row.name}  ({str(row.primary_role).title()}, "
+            f"{PLAT_LABELS.get(getattr(row, 'primary_platform', ''), '')}, "
+            f"{int(row.title_count)} titles)"
+        )
+        for row in arena_pool.itertuples(index=False)
+    }
 
     def fmt_arena(pid):
-        r = arena_pool[arena_pool["person_id"] == pid]
-        if r.empty:
-            return pid
-        row = r.iloc[0]
-        plat = PLAT_LABELS.get(row.get("primary_platform", ""), "")
-        return f"{row['name']}  ({str(row['primary_role']).title()}, {plat}, {int(row['title_count'])} titles)"
+        return _arena_label_map.get(pid, pid)
 
     # Random Battle button
     col_rand, _ = st.columns([1, 5])
@@ -913,8 +917,8 @@ with tab_arena:
 
     # Battle render
     if pid_a and pid_b:
-        row_a = arena_pool[arena_pool["person_id"] == pid_a].iloc[0]
-        row_b = arena_pool[arena_pool["person_id"] == pid_b].iloc[0]
+        row_a = _arena_pool_idx.loc[pid_a]
+        row_b = _arena_pool_idx.loc[pid_b]
 
         if pid_a == pid_b:
             st.warning("Pick two different people for a battle!")

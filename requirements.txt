@@ -21,6 +21,7 @@ seaborn~=0.12
 
 # Network Analysis (for Cast & Crew page)
 networkx~=3.1
+pyvis~=0.3
 
 # --- Dev dependencies ---
 pytest~=7.4
