@@ -551,24 +551,17 @@ with tab_net:
         r     = _net_ps_idx.loc[selected_node]
         conns = len(adj.get(selected_node, {}))
 
-        # All platforms this person has titles on
-        raw_plats = r.get("platform_list", [])
-        if isinstance(raw_plats, (list, set)) and len(raw_plats) > 0:
-            plat_badges = " ".join(
-                f'<span style="display:inline-block;background:{PLAT_COLORS.get(str(p).lower(), DEFAULT_COLOR)}22;'
-                f'border:1px solid {PLAT_COLORS.get(str(p).lower(), DEFAULT_COLOR)};'
-                f'color:{PLAT_COLORS.get(str(p).lower(), "#aaa")};'
-                f'border-radius:12px;padding:2px 10px;font-size:0.78em;margin:2px;">'
-                f'{PLAT_LABELS.get(str(p).lower(), str(p).title())}</span>'
-                for p in sorted(set(str(x).lower() for x in raw_plats))
-            )
-        else:
-            pplat  = _primary_plat_map.get(selected_node, "N/A")
-            plat_badges = (
-                f'<span style="color:{PLAT_COLORS.get(pplat, DEFAULT_COLOR)}">'
-                f'{PLAT_LABELS.get(pplat, pplat)}</span>'
-            )
+        # Per-platform title count for this person
+        person_credits = credits[credits["person_id"] == selected_node][["title_id"]]
+        t_slim = titles[["id", "platform"]].rename(columns={"id": "title_id"})
+        plat_counts = (
+            person_credits.merge(t_slim, on="title_id", how="left")
+            .groupby("platform").size()
+            .sort_values(ascending=False)
+            .to_dict()
+        )
 
+        # Top stat cards
         c1, c2, c3, c4 = st.columns(4)
         for col, lbl, val in [
             (c1, "Name",        r["name"]),
@@ -584,13 +577,25 @@ with tab_net:
                 unsafe_allow_html=True,
             )
 
-        st.markdown(
-            f'<div style="background:#1E1E2E;border:1px solid #333;border-radius:8px;'
-            f'padding:10px 14px;margin-top:8px;">'
-            f'<div style="color:#666;font-size:0.7em;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Platforms</div>'
-            f'{plat_badges}</div>',
-            unsafe_allow_html=True,
-        )
+        # Platform breakdown legend
+        if plat_counts:
+            st.markdown("<div style='margin-top:10px;'>", unsafe_allow_html=True)
+            plat_cols = st.columns(len(plat_counts))
+            for i, (plat, count) in enumerate(plat_counts.items()):
+                pkey   = str(plat).lower()
+                pcolor = PLAT_COLORS.get(pkey, DEFAULT_COLOR)
+                plabel = PLAT_LABELS.get(pkey, str(plat).title())
+                plat_cols[i].markdown(
+                    f'<div style="background:#1E1E2E;border:1px solid {pcolor}55;border-top:3px solid {pcolor};'
+                    f'border-radius:8px;padding:10px 14px;text-align:center;">'
+                    f'<div style="display:inline-block;width:10px;height:10px;border-radius:50%;'
+                    f'background:{pcolor};margin-right:6px;vertical-align:middle;"></div>'
+                    f'<span style="color:#aaa;font-size:0.78em;">{plabel}</span><br>'
+                    f'<span style="color:#fff;font-size:1.1em;font-weight:700;">{count}</span>'
+                    f'<span style="color:#666;font-size:0.75em;"> titles</span></div>',
+                    unsafe_allow_html=True,
+                )
+            st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
