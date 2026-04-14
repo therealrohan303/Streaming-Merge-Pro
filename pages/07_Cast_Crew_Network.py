@@ -484,9 +484,11 @@ with tab_net:
             placeholder="Type a name to search…", label_visibility="collapsed", key="net_seed",
         )
     with col_d:
-        depth = st.selectbox("Degrees", [1, 2], index=1, key="net_depth")
+        depth = st.selectbox("Degrees", [1, 2], index=1, key="net_depth",
+            help="How many hops away from the seed person to include. 1 = direct collaborators only. 2 = collaborators of collaborators.")
     with col_m:
-        max_nodes = st.selectbox("Max nodes", [50, 100, 150], index=1, key="net_max")
+        max_nodes = st.selectbox("Max nodes", [50, 100, 150], index=1, key="net_max",
+            help="Maximum number of people to show in the network. Lower = faster and less cluttered. Higher = more connections visible.")
 
     role_filter = st.multiselect(
         "Filter by role", options=ALL_ROLES, default=["ACTOR", "DIRECTOR"],
