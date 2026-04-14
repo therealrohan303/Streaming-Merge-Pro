@@ -765,32 +765,33 @@ with tab_arena:
         st.session_state["arena_a"] = sample.iloc[0]["person_id"]
         st.session_state["arena_b"] = sample.iloc[1]["person_id"]
 
+    _arena_ids   = arena_pool["person_id"].tolist()
+    _arena_names = arena_pool.set_index("person_id")["name"].to_dict()
+
     col_a, col_vs, col_b = st.columns([5, 1, 5])
     with col_a:
-        query_a = st.text_input("Search Person A", placeholder="e.g. Samuel L. Jackson", key="arena_search_a")
-        results_a = arena_pool[arena_pool["name"].str.contains(query_a, case=False, na=False)] if query_a else pd.DataFrame()
-        if not results_a.empty:
-            sel_a = st.selectbox(
-                f"{len(results_a)} match(es)",
-                options=results_a["person_id"].tolist(),
-                format_func=lambda pid: results_a[results_a["person_id"] == pid].iloc[0]["name"],
-                key="arena_sel_a",
-            )
+        sel_a = st.selectbox(
+            "Person A",
+            options=[None] + _arena_ids,
+            format_func=lambda pid: "Type to search…" if pid is None else _arena_names.get(pid, pid),
+            key="arena_sel_a",
+            placeholder="Type a name…",
+        )
+        if sel_a:
             st.session_state["arena_a"] = sel_a
 
     with col_vs:
         st.markdown("<div style='text-align:center;font-size:2.5rem;font-weight:900;color:#e74c3c;padding-top:28px;'>VS</div>", unsafe_allow_html=True)
 
     with col_b:
-        query_b = st.text_input("Search Person B", placeholder="e.g. Meryl Streep", key="arena_search_b")
-        results_b = arena_pool[arena_pool["name"].str.contains(query_b, case=False, na=False)] if query_b else pd.DataFrame()
-        if not results_b.empty:
-            sel_b = st.selectbox(
-                f"{len(results_b)} match(es)",
-                options=results_b["person_id"].tolist(),
-                format_func=lambda pid: results_b[results_b["person_id"] == pid].iloc[0]["name"],
-                key="arena_sel_b",
-            )
+        sel_b = st.selectbox(
+            "Person B",
+            options=[None] + _arena_ids,
+            format_func=lambda pid: "Type to search…" if pid is None else _arena_names.get(pid, pid),
+            key="arena_sel_b",
+            placeholder="Type a name…",
+        )
+        if sel_b:
             st.session_state["arena_b"] = sel_b
 
     pid_a = st.session_state.get("arena_a")
