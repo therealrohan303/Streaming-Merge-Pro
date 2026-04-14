@@ -278,10 +278,10 @@ def _render_pyvis(node_ids: frozenset, edge_triples: frozenset, seed_id: str) ->
         color    = PLAT_COLORS.get(plat_key, DEFAULT_COLOR)
         plat_lbl = PLAT_LABELS.get(plat_key, plat_key.title() if plat_key else "Unknown")
         tooltip  = (
-            f"<b>{row['name']}</b><br>"
-            f"Role: {str(row['primary_role']).title()}<br>"
-            f"Platform: {plat_lbl}<br>"
-            f"Titles: {int(row['title_count'])}<br>"
+            f"{row['name']}\n"
+            f"Role: {str(row['primary_role']).title()}\n"
+            f"Platform: {plat_lbl}\n"
+            f"Titles: {int(row['title_count'])}\n"
             f"Avg IMDb: {float(row['avg_imdb']):.1f}"
         )
         net.add_node(
