@@ -467,6 +467,7 @@ with tab_net:
         net_person_stats[net_person_stats["person_id"].isin(connected_ids)]
         .sort_values("title_count", ascending=False)
         [["person_id", "name", "primary_role", "title_count"]]
+        .drop_duplicates("name", keep="first")
         .head(5000)
     )
     seed_ids = seed_pool["person_id"].tolist()
@@ -535,7 +536,11 @@ with tab_net:
 
     st.markdown("---")
     st.markdown("**Quick Stats — pick any visible node:**")
-    visible = net_person_stats[net_person_stats["person_id"].isin(filtered_nodes)].sort_values("name")
+    visible = (
+        net_person_stats[net_person_stats["person_id"].isin(filtered_nodes)]
+        .sort_values("name")
+        .drop_duplicates("name", keep="first")
+    )
     vis_ids = visible["person_id"].tolist()
     _net_ps_idx = net_person_stats.set_index("person_id")
     _primary_plat_map = _compute_primary_platform().set_index("person_id")["primary_platform"].to_dict()
