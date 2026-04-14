@@ -548,18 +548,33 @@ with tab_net:
         label_visibility="collapsed", key="net_stats",
     )
     if selected_node:
-        r      = _net_ps_idx.loc[selected_node]
-        pplat  = _primary_plat_map.get(selected_node, "N/A")
-        pcolor = PLAT_COLORS.get(pplat, DEFAULT_COLOR)
-        plabel = PLAT_LABELS.get(pplat, pplat)
-        conns  = len(adj.get(selected_node, {}))
-        c1, c2, c3, c4, c5 = st.columns(5)
+        r     = _net_ps_idx.loc[selected_node]
+        conns = len(adj.get(selected_node, {}))
+
+        # All platforms this person has titles on
+        raw_plats = r.get("platform_list", [])
+        if isinstance(raw_plats, (list, set)) and len(raw_plats) > 0:
+            plat_badges = " ".join(
+                f'<span style="display:inline-block;background:{PLAT_COLORS.get(str(p).lower(), DEFAULT_COLOR)}22;'
+                f'border:1px solid {PLAT_COLORS.get(str(p).lower(), DEFAULT_COLOR)};'
+                f'color:{PLAT_COLORS.get(str(p).lower(), "#aaa")};'
+                f'border-radius:12px;padding:2px 10px;font-size:0.78em;margin:2px;">'
+                f'{PLAT_LABELS.get(str(p).lower(), str(p).title())}</span>'
+                for p in sorted(set(str(x).lower() for x in raw_plats))
+            )
+        else:
+            pplat  = _primary_plat_map.get(selected_node, "N/A")
+            plat_badges = (
+                f'<span style="color:{PLAT_COLORS.get(pplat, DEFAULT_COLOR)}">'
+                f'{PLAT_LABELS.get(pplat, pplat)}</span>'
+            )
+
+        c1, c2, c3, c4 = st.columns(4)
         for col, lbl, val in [
             (c1, "Name",        r["name"]),
             (c2, "Role",        str(r["primary_role"]).title()),
-            (c3, "Platform",    f'<span style="color:{pcolor}">{plabel}</span>'),
-            (c4, "Titles",      int(r["title_count"])),
-            (c5, "Connections", conns),
+            (c3, "Titles",      int(r["title_count"])),
+            (c4, "Connections", conns),
         ]:
             col.markdown(
                 f'<div style="background:#1E1E2E;border:1px solid #333;border-radius:8px;'
@@ -568,6 +583,14 @@ with tab_net:
                 f'<div style="color:#fff;font-size:1em;font-weight:600;margin-top:4px;">{val}</div></div>',
                 unsafe_allow_html=True,
             )
+
+        st.markdown(
+            f'<div style="background:#1E1E2E;border:1px solid #333;border-radius:8px;'
+            f'padding:10px 14px;margin-top:8px;">'
+            f'<div style="color:#666;font-size:0.7em;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Platforms</div>'
+            f'{plat_badges}</div>',
+            unsafe_allow_html=True,
+        )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
