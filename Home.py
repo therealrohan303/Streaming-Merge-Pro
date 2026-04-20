@@ -211,7 +211,7 @@ else:
     _insight_parts.append(".")
 
 st.markdown(
-    styled_banner_html("ℹ️", "".join(_insight_parts)),
+    styled_banner_html("", "".join(_insight_parts)),
     unsafe_allow_html=True,
 )
 
@@ -458,7 +458,7 @@ def _render_home_detail_panel(title_id: str):
                 f'<span style="background:rgba(46,204,113,0.15);color:#2ecc71;'
                 f'border:1px solid #2ecc71;padding:4px 12px;border-radius:12px;'
                 f'font-size:0.83em;font-weight:600;">'
-                f'🏆 {int(_aw)} wins{_noms_str}</span>',
+                f'{int(_aw)} wins{_noms_str}</span>',
                 unsafe_allow_html=True,
             )
 
@@ -894,27 +894,23 @@ st.divider()
 st.markdown(section_header_html("Explore"), unsafe_allow_html=True)
 
 _NAV_PAGES = [
-    ("01_Explore_Catalog", "Explore Catalog", "Search, browse, and discover similar titles", "🔍"),
-    ("02_Platform_Comparisons", "Platform Comparisons", "Benchmark the merged entity against competitors", "📊"),
-    ("03_Platform_DNA", "Platform DNA", "Understand each platform's unique content identity", "🧬"),
-    ("04_Discovery_Engine", "Discovery Engine", "Get personalized recommendations", "✨"),
-    ("05_Strategic_Insights", "Strategic Insights", "Merger overlap, gap analysis, and market simulation", "🎯"),
-    ("06_Interactive_Lab", "Interactive Lab", "Build your service and predict title success", "🧪"),
-    ("07_Cast_Crew_Network", "Cast & Crew Network", "Explore collaboration networks and influence scores", "🕸️"),
+    ("01_Explore_Catalog", "Explore Catalog", "Search, browse, and discover similar titles"),
+    ("02_Platform_Comparisons", "Platform Comparisons", "Benchmark the merged entity against competitors"),
+    ("03_Platform_DNA", "Platform DNA", "Understand each platform's unique content identity"),
+    ("04_Discovery_Engine", "Discovery Engine", "Get personalized recommendations"),
+    ("05_Strategic_Insights", "Strategic Insights", "Merger overlap, gap analysis, and market simulation"),
+    ("06_Interactive_Lab", "Interactive Lab", "Build your service and predict title success"),
+    ("07_Cast_Crew_Network", "Cast & Crew Network", "Explore collaboration networks and influence scores"),
 ]
 
 nav_cols = st.columns(3)
-for i, (slug, name, desc, icon) in enumerate(_NAV_PAGES):
+for i, (slug, name, desc) in enumerate(_NAV_PAGES):
     with nav_cols[i % 3]:
         st.markdown(
             f'<div style="background:{CARD_BG};border:1px solid {CARD_BORDER};'
             f'border-left:4px solid {_MERGED_COLOR};border-radius:6px;'
             f'padding:12px 16px;margin-bottom:8px;">'
-            f'<div style="display:flex;align-items:center;justify-content:space-between;">'
-            f'<span style="font-size:1.1em;">{icon}</span>'
-            f'<span style="color:{CARD_TEXT_MUTED};font-size:0.9em;">→</span>'
-            f'</div>'
-            f'<div style="font-weight:700;font-size:0.95em;color:{CARD_TEXT};margin:4px 0 2px;">{name}</div>'
+            f'<div style="font-weight:700;font-size:0.95em;color:{CARD_TEXT};margin-bottom:2px;">{name}</div>'
             f'<div style="font-size:0.8em;color:{CARD_TEXT_MUTED};">{desc}</div>'
             f'</div>',
             unsafe_allow_html=True,
@@ -929,7 +925,7 @@ st.markdown(
     'Hypothetical merger for academic analysis. '
     'Data is a snapshot (mid-2023). '
     'All insights are illustrative, not prescriptive. '
-    'Update: As of Feb 26, 2026, Netflix withdrew from this acquisition after Paramount Skydance\'s competing bid was deemed superior by the WBD board.'
+    'As of Feb 26, 2026, Netflix withdrew from this acquisition.'
     '</div>',
     unsafe_allow_html=True,
 )

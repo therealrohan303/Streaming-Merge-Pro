@@ -199,11 +199,18 @@ def compute_gap_analysis(df, perspective="merged", competitor=None):
     else:
         base = df[df["platform"] == perspective]
 
+    # Platforms that belong to the "perspective" entity — never counted as competitors
+    own_platforms = MERGED_PLATFORMS if perspective == "merged" else [perspective]
+
     if competitor:
-        comp = df[df["platform"] == competitor]
+        if competitor == "merged":
+            comp = build_merged_entity(df)
+        else:
+            comp = df[df["platform"] == competitor]
     else:
-        competitors = [p for p in ALL_PLATFORMS if p not in MERGED_PLATFORMS]
-        comp = df[df["platform"].isin(competitors)]
+        # All Competitors = every platform except the perspective's own platform(s)
+        comp_platforms = [p for p in ALL_PLATFORMS if p not in own_platforms]
+        comp = df[df["platform"].isin(comp_platforms)]
 
     base_exploded = base.explode("genres")
     comp_exploded = comp.explode("genres")
@@ -264,9 +271,9 @@ def compute_gap_analysis(df, perspective="merged", competitor=None):
         if competitor:
             leader = competitor
         else:
-            # Find which competitor leads most
+            # Find which competitor leads most (excluding own platform(s))
             per_comp = {}
-            for p in [p for p in ALL_PLATFORMS if p not in MERGED_PLATFORMS]:
+            for p in [p for p in ALL_PLATFORMS if p not in own_platforms]:
                 p_data = df[df["platform"] == p].explode("genres")
                 p_count = len(p_data[p_data["genres"] == genre])
                 per_comp[p] = p_count
@@ -668,7 +675,7 @@ def compute_best_alternative_scenario(df):
     return best
 
 
-def compute_acquisition_shortlist(df, gap_df, n_per_gap=8):
+def compute_acquisition_shortlist(df, gap_df, n_per_gap=8, perspective="merged"):
     """Find real titles from competitor catalogs that fit each high-priority gap.
 
     For each High/Medium severity gap genre, finds actual titles on competitor
@@ -679,7 +686,12 @@ def compute_acquisition_shortlist(df, gap_df, n_per_gap=8):
     if gap_df.empty:
         return {}
 
-    merged_ids = set(build_merged_entity(df)["id"])
+    # Exclude own-platform titles so they never appear as acquisition candidates
+    if perspective == "merged":
+        own_ids = set(build_merged_entity(df)["id"])
+    else:
+        own_ids = set(df[df["platform"] == perspective]["id"].dropna())
+
     shortlist = {}
 
     high_priority = gap_df[gap_df["severity"].isin(["High", "Medium"])].head(5)
@@ -687,7 +699,7 @@ def compute_acquisition_shortlist(df, gap_df, n_per_gap=8):
     for _, gap in high_priority.iterrows():
         genre = gap["genre"]
         # Find titles from competitor platforms in this genre
-        comp_titles = df[~df["id"].isin(merged_ids)].copy()
+        comp_titles = df[~df["id"].isin(own_ids)].copy()
         comp_exploded = comp_titles.explode("genres")
         in_genre = comp_exploded[comp_exploded["genres"] == genre].copy()
 

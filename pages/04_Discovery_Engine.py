@@ -192,7 +192,7 @@ def _render_rec_card(row: dict, score_badge_html: str = "") -> None:
     platforms  = row.get("platforms") or ([row["platform"]] if row.get("platform") else [])
     tid        = row.get("similar_id") or row.get("id", "")
 
-    imdb_str  = f"⭐ {imdb:.1f}" if imdb and pd.notna(imdb) else "⭐ N/A"
+    imdb_str  = f"{imdb:.1f}" if imdb and pd.notna(imdb) else "N/A"
     votes_str = format_votes(votes) if votes and pd.notna(votes) else ""
     year_str  = str(int(year)) if year and pd.notna(year) else ""
     votes_html = (
@@ -272,7 +272,7 @@ def _render_title_detail(title_id: str) -> None:
             wi = int(wins)
             noms = enr.get("award_noms")
             ns = f" / {int(noms)} nom" if noms and pd.notna(noms) else ""
-            wins_str = f"🏆 {wi} win{'s' if wi != 1 else ''}{ns}"
+            wins_str = f"{wi} win{'s' if wi != 1 else ''}{ns}"
 
     bo_str = ""
     if enr is not None:
@@ -325,7 +325,7 @@ def _render_title_detail(title_id: str) -> None:
             )
 
             # IMDb + votes + award badge
-            imdb_row = f'<span style="color:{CARD_ACCENT};font-weight:700;font-size:1.05rem;">⭐ {imdb_str}</span>'
+            imdb_row = f'<span style="color:{CARD_ACCENT};font-weight:700;font-size:1.05rem;">IMDb {imdb_str}</span>'
             if votes_str:
                 imdb_row += f' <span style="color:{CARD_TEXT_MUTED};font-size:0.82em;">({votes_str} votes)</span>'
             if wins_str:
@@ -504,7 +504,7 @@ def _render_why_similar(result_row: dict, sim_score: float, source_row: dict) ->
         )
         st.markdown(
             f'<div><div style="color:{CARD_TEXT_MUTED};font-size:0.72em;text-transform:uppercase;'
-            f'letter-spacing:0.04em;margin-bottom:5px;">🏷️ Shared Themes</div>{pills}</div>',
+            f'letter-spacing:0.04em;margin-bottom:5px;">Shared Themes</div>{pills}</div>',
             unsafe_allow_html=True,
         )
 
@@ -546,7 +546,7 @@ def _add_to_history(entry: dict) -> None:
 # ─── Tabs ──────────────────────────────────────────────────────────────────────
 
 tab1, tab2, tab3, tab_history = st.tabs(
-    ["🔍 Title Match", "🎭 Mood Board", "✨ Vibe Search", "🕓 History"]
+    ["Title Match", "Mood Board", "Vibe Search", "History"]
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -584,9 +584,9 @@ with tab1:
         )
         btn_col1, btn_col2 = st.columns([1, 1])
         with btn_col1:
-            find_clicked = st.button("🔍 Find", key="sim_find", use_container_width=True)
+            find_clicked = st.button("Find", key="sim_find", use_container_width=True)
         with btn_col2:
-            surprise_clicked = st.button("🎲 Surprise Me", key="sim_surprise", use_container_width=True)
+            surprise_clicked = st.button("Surprise Me", key="sim_surprise", use_container_width=True)
     with ctrl2:
         scope = st.radio("Scope", ["Merged", "All Platforms"], key="sim_scope", horizontal=True)
         scope_key = "merged" if scope == "Merged" else "all_platforms"
@@ -752,7 +752,7 @@ with tab1:
                 _render_rec_card(r, _sim_score_badge_html(sim_score))
             with btn_col:
                 if st.button(
-                    "▼" if is_open else "ℹ️",
+                    "▼" if is_open else "Details",
                     key=f"detail_sim_{rid}",
                     help="View full details",
                     use_container_width=True,
@@ -818,7 +818,7 @@ div[data-testid="stVerticalBlock"] div[data-testid="column"] > div > div > div >
                 break
             tile      = MOOD_TILES[tile_i]
             is_sel    = tile["label"] in selected_moods
-            lbl       = f'{"✓ " if is_sel else ""}{tile["emoji"]} {tile["label"]}'
+            lbl       = f'{"✓ " if is_sel else ""}{tile["label"]}'
             with cols[col_i]:
                 if st.button(lbl, key=f"mood_{tile_i}", use_container_width=True):
                     if is_sel:
@@ -942,7 +942,7 @@ div[data-testid="stVerticalBlock"] div[data-testid="column"] > div > div > div >
                     _render_rec_card(row_dict, _mood_score_badge_html(mood_pct))
                 with btn_col:
                     if st.button(
-                        "▼" if is_open else "ℹ️",
+                        "▼" if is_open else "Details",
                         key=f"detail_mood_{mid}",
                         help="View full details",
                         use_container_width=True,
@@ -1103,7 +1103,7 @@ with tab3:
             st.markdown(
                 f'<div style="margin:8px 0;">'
                 f'<span style="color:{CARD_TEXT_MUTED};font-size:0.78em;'
-                f'text-transform:uppercase;letter-spacing:0.04em;margin-right:8px;">🏷️ Themes detected</span>'
+                f'text-transform:uppercase;letter-spacing:0.04em;margin-right:8px;">Themes detected</span>'
                 f'{pills}</div>',
                 unsafe_allow_html=True,
             )
@@ -1135,7 +1135,7 @@ with tab3:
                 _render_rec_card(vrow_dict, _vibe_label_badge_html(vibe_sc))
             with btn_col:
                 if st.button(
-                    "▼" if is_open else "ℹ️",
+                    "▼" if is_open else "Details",
                     key=f"detail_vibe_{vid}_{i_v}",
                     help="View full details",
                     use_container_width=True,
@@ -1199,7 +1199,7 @@ with tab3:
 # TAB 4 — HISTORY
 # ══════════════════════════════════════════════════════════════════════════════
 
-_HIST_ICONS   = {"Title Match": "🔍", "Mood Board": "🎭", "Vibe Search": "✨"}
+_HIST_ICONS   = {"Title Match": "", "Mood Board": "", "Vibe Search": ""}
 _HIST_COLORS  = {
     "Title Match": "#4FC3F7",
     "Mood Board":  "#CE93D8",
@@ -1253,7 +1253,7 @@ with tab_history:
                 tab_color = _HIST_COLORS.get(group_key, "#888")
                 st.markdown(
                     section_header_html(
-                        f'{_HIST_ICONS.get(group_key,"")} {group_key}',
+                        group_key,
                         f'{len(group_entries)} search{"es" if len(group_entries)>1 else ""}',
                         accent_color=tab_color,
                     ),
@@ -1281,19 +1281,19 @@ with tab_history:
                             f'padding:1px 7px;border-radius:8px;font-size:0.72em;">×{run_count}</span>'
                             if run_count > 1 else ""
                         )
-                        pin_star = "📌 " if is_pinned else ""
+                        pin_star = "Pinned · " if is_pinned else ""
                         st.markdown(
-                            f'{pin_star}'
+                            f'<span style="color:{CARD_TEXT_MUTED};font-size:0.75em;">{pin_star}</span>'
                             f'<span style="background:{tab_color};color:#111;padding:2px 8px;'
                             f'border-radius:8px;font-size:0.75em;font-weight:700;margin-right:6px;">'
-                            f'{icon} {tab_type}</span>'
+                            f'{tab_type}</span>'
                             f'<span style="color:{CARD_TEXT};font-size:0.88em;">{query}</span>'
                             f'{run_badge}',
                             unsafe_allow_html=True,
                         )
 
                     with pin_col:
-                        pin_lbl = "📌" if is_pinned else "☆"
+                        pin_lbl = "Pin" if not is_pinned else "Unpin"
                         if st.button(pin_lbl, key=f"hist_pin_{eid}", help="Pin / unpin this search"):
                             for e in st.session_state.rec_history:
                                 if e.get("_id") == eid:
@@ -1350,7 +1350,7 @@ with tab_history:
                                         f'<span style="display:flex;align-items:center;gap:6px;">'
                                         f'{plat_html}'
                                         f'<span style="color:{CARD_TEXT_MUTED};font-size:0.78em;">'
-                                        f'⭐ {imdb_str}</span></span></div>',
+                                        f'IMDb {imdb_str}</span></span></div>',
                                         unsafe_allow_html=True,
                                     )
                                 else:
@@ -1375,11 +1375,13 @@ with tab_history:
 
 # ─── Footer ───────────────────────────────────────────────────────────────────
 
+st.divider()
 st.markdown(
-    f'<div style="border-top:1px solid {CARD_BORDER};margin-top:40px;padding-top:12px;'
-    f'text-align:center;color:{CARD_TEXT_MUTED};font-size:0.75em;">'
-    f'Hypothetical merger for academic analysis. Data is a snapshot (mid-2023). '
-    f'All insights are illustrative, not prescriptive. '
-    f'Update: As of Feb 26, 2026, Netflix withdrew from this acquisition after Paramount Skydance\'s competing bid was deemed superior by the WBD board.</div>',
+    '<div style="color:#555;font-size:0.8em;text-align:center;padding:8px 0 16px;">'
+    'Hypothetical merger for academic analysis. '
+    'Data is a snapshot (mid-2023). '
+    'All insights are illustrative, not prescriptive. '
+    'As of Feb 26, 2026, Netflix withdrew from this acquisition.'
+    '</div>',
     unsafe_allow_html=True,
 )

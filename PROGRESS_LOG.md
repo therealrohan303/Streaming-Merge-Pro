@@ -1,5 +1,58 @@
 # Progress Log: Netflix + Max Merger Capstone
 
+## [2026-04-17] Greenlight Studio results rebuild (Page 6 · Tab 1)
+
+### Done
+- **Part 1 — Budget input**: Replaced 4-option budget radio with `st.slider` ($1M–$500M, $1M step, `$%dM` format, default $25M) and helper caption with indie/mid/tent-pole/blockbuster examples. Model tier still binned internally (<$10M=1, <$50M=2, <$200M=3, else=4).
+- **Part 2 — Predicted IMDb Score**: Renamed "Predicted Performance" → "Predicted IMDb Score" with subtitle "Based on comparable titles in the catalog". Added plain-English quality bands (<5.5 underperform / 5.5–6.5 moderate / 6.5–7.5 strong / >7.5 exceptional) below the gauge; CV RMSE footnote retained.
+- **Part 3 — Most Similar Titles**: Rebuilt using `vibe_search()` (35% desc + 25% genre + 15% genome + 15% quality + 10% awards). Renders a 5-column grid of poster-left cards (title+year, platform badge, IMDb+votes, genre pills, sim badge). Rated titles shown first, unrated padded in.
+- **Part 4 — Platform Fit**: New 3-signal 0–100 score (40% genre overlap, 30% quality delta vs platform median, 30% content-type match). Plotly horizontal bar sorted desc, per-platform colors from `PLATFORMS`, "Best fit" star on top bar, `xaxis range=[0,100]`.
+- **Part 5 — Directors / Cast**: Rebuilt from `imdb_principals` + enriched join via fresh `groupby("person_id")`. Directors ≥2 titles & avg IMDb ≥6.5; actors ≥2 titles & ≥6.0. Rank = 0.6·vibe + 0.4·quality_norm, `seen` dedup guarantee; per-person card shows IMDb badge, two title pills, platform list, concept-match %.
+- **Part 6 — Box Office Projection** (movies only): Heuristic `projected = budget × genre_mult × quality_mult × cert_mult` using per-genre median `box_office/budget` ratios (≥5 samples per genre) with ±40% band and explicit disclaimer.
+- **Part 7 — Catalog Gap Signal**: Computed merged-catalog genre share directly from enriched (dropped `acquisition_targets` dependency). Bands: <15% green "High Priority Gap", 15–30% amber "Moderate Gap", ≥30% red-orange "Saturated Category".
+- **Part 8 — Layout**: Row 1 IMDb Score | Box Office · Row 2 Similar Titles (full width) · Row 3 Platform Fit | Gap Signal · Row 4 Directors | Cast · Row 5 Model Card expander (appended June-2025 snapshot note).
+- New cached helpers `_box_office_stats`, `_platform_profiles`, and inline `_gs_*` card helpers added at module level.
+
+### Files touched
+- `pages/06_Interactive_Lab.py`
+
+### Next
+- [ ] Manual smoke test: Movie (Crime+Drama, $45M, R) + Show (Drama, 3 seasons) + empty-description path
+- [ ] Confirm Tabs 2 (Franchise Explorer) and 3 (Draft Room) unchanged
+
+---
+
+## [2026-04-16] Design consistency pass + emoji removal (all 8 pages)
+
+### Done
+- **`src/ui/badges.py`**: Updated `styled_banner_html()` to skip icon span when icon is empty string
+- **`Home.py`**: Removed emoji from nav cards (4-tuple → 3-tuple), award badge `🏆`, banner icon `ℹ️`; standardized footer text
+- **`pages/01_Explore_Catalog.py`**: Removed `🏆` award badge, `✨` from CTA; standardized footer
+- **`pages/02_Platform_Comparisons.py`**: Removed `🏆` award badge, `ℹ️` from caption; standardized footer
+- **`pages/03_Platform_DNA.py`**: Deleted `_GENRE_ICONS` dict (19 entries) + `_INSIGHT_ICONS` dict; removed all emoji from genre/type buttons, quiz cards, swipe buttons, IMDb labels, poster placeholders; standardized footer
+- **`pages/04_Discovery_Engine.py`**: Cleaned tab labels, `⭐` IMDb, `🏆` wins, `🏷️` tags, `ℹ️` toggles, button text, mood tile labels, history pin/unpin; standardized footer with `st.divider()`
+- **`pages/05_Strategic_Insights.py`**: All `styled_banner_html` icons → `""`; removed trophy `🏆`; cleaned gap-analysis `🎯`; standardized footer style + text
+- **`pages/06_Interactive_Lab.py`**: Cleaned tab labels, button text, `⭐` IMDb (5+ locations), `🏆` awards, `💡` spans; standardized footer
+- **`pages/07_Cast_Crew_Network.py`**: Added standard imports + `page_header_html()`; cleaned tab labels; replaced `STAT_ICONS` dict with empty dict; removed `🎉`, `🔄`, `🎲`, `⭐`, `🏆`, `🎬`, `🕵️`, `⚔️` across Actor Wordle + Arena; added page-level footer
+- Preserved `★` markers in genre heatmap (page 02) and network seed-node legend (page 07) — functional data viz markers
+
+### Files touched
+- `src/ui/badges.py`
+- `Home.py`
+- `pages/01_Explore_Catalog.py`
+- `pages/02_Platform_Comparisons.py`
+- `pages/03_Platform_DNA.py`
+- `pages/04_Discovery_Engine.py`
+- `pages/05_Strategic_Insights.py`
+- `pages/06_Interactive_Lab.py`
+- `pages/07_Cast_Crew_Network.py`
+
+### Next
+- [ ] Final integration testing of all 8 pages end-to-end
+- [ ] Mark project as feature-complete
+
+---
+
 ## [2026-04-07] Interactive Lab — Complete Rebuild (Page 6)
 
 ### Done

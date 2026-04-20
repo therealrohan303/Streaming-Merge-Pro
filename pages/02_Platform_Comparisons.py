@@ -115,7 +115,7 @@ def _render_expanded_card(title_row, title_id: str, platform_name: str = ""):
                     f'<span style="background:rgba(46,204,113,0.15);color:#2ecc71;'
                     f'border:1px solid #2ecc71;padding:4px 12px;border-radius:12px;'
                     f'font-size:0.83em;font-weight:600;">'
-                    f'🏆 {int(_aw)} wins{_noms_str}</span>',
+                    f'{int(_aw)} wins{_noms_str}</span>',
                     unsafe_allow_html=True,
                 )
 
@@ -650,7 +650,7 @@ with vol_table:
         hide_index=True,
     )
     if _prestige_coverage >= WIKIDATA_COMPARISON_MIN_COVERAGE:
-        st.caption("ℹ️ Prestige Score = award wins per 1,000 titles (Wikidata)")
+        st.caption("Prestige Score = award wins per 1,000 titles (Wikidata)")
     else:
         st.caption(
             f"Prestige Score unavailable (Wikidata coverage: {_prestige_coverage:.0%}, need ≥{WIKIDATA_COMPARISON_MIN_COVERAGE:.0%})"
@@ -1249,7 +1249,7 @@ st.markdown(
     'Hypothetical merger for academic analysis. '
     'Data is a snapshot (mid-2023). '
     'All insights are illustrative, not prescriptive. '
-    'Update: As of Feb 26, 2026, Netflix withdrew from this acquisition after Paramount Skydance\'s competing bid was deemed superior by the WBD board.'
+    'As of Feb 26, 2026, Netflix withdrew from this acquisition.'
     '</div>',
     unsafe_allow_html=True,
 )

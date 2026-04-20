@@ -124,10 +124,15 @@ def styled_banner_html(
 
         st.markdown(styled_banner_html("ℹ️", "The merger adds **2,921 titles**..."), unsafe_allow_html=True)
     """
+    icon_html = (
+        f'<span style="margin-right:8px;font-size:1.1em;">{icon}</span>'
+        if icon
+        else ""
+    )
     return (
         f'<div style="background:{bg};border:1px solid {border_color};'
         f'border-radius:8px;padding:12px 16px;margin:8px 0;">'
-        f'<span style="margin-right:8px;font-size:1.1em;">{icon}</span>'
+        f'{icon_html}'
         f'<span style="color:{CARD_TEXT};font-size:0.92em;">{text}</span>'
         f'</div>'
     )

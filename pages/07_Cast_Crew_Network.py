@@ -102,7 +102,9 @@ def get_head_to_head_stats(pid, person_stats, credits_df, titles_df):
         "best_imdb":          best_imdb,
     }
 
-st.set_page_config(page_title="Cast & Crew", page_icon="🎬", layout="wide")
+from src.config import INITIAL_SIDEBAR_STATE, LAYOUT, PAGE_ICON, PAGE_TITLE
+from src.ui.badges import page_header_html
+st.set_page_config(page_title=f"Cast & Crew Network | {PAGE_TITLE}", page_icon=PAGE_ICON, layout=LAYOUT, initial_sidebar_state=INITIAL_SIDEBAR_STATE)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -437,14 +439,15 @@ if "lost" not in st.session_state:
     st.session_state.lost = False
 
 # ── Page header + tabs ─────────────────────────────────────────────────────────
-st.markdown("""
-<div style="padding:12px 0 4px;">
-    <div style="font-size:2em;font-weight:900;color:#fff;">🎬 Cast &amp; Crew</div>
-    <div style="color:#888;font-size:0.9em;margin-top:2px;">Collaboration Network · Actor Wordle · Head-to-Head Arena</div>
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    page_header_html(
+        "Cast & Crew Network",
+        "Explore collaboration networks, guess the mystery actor, and compare performers head-to-head.",
+    ),
+    unsafe_allow_html=True,
+)
 
-tab_net, tab_wordle, tab_arena = st.tabs(["🕸️ Collaboration Network", "🎬 Actor Wordle", "⚔️ Head-to-Head Arena"])
+tab_net, tab_wordle, tab_arena = st.tabs(["Collaboration Network", "Actor Wordle", "Head-to-Head Arena"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -625,7 +628,7 @@ with tab_wordle:
             _filt = filter_candidates(mystery, _num_g + 1, people)
             _filt = [n for n in _filt if n not in st.session_state.guesses]
             st.markdown(
-                f"### 🎯 Your Guess &nbsp;"
+                f"### Your Guess &nbsp;"
                 f"<span style='color:#888;font-size:0.9rem;'>({MAX_GUESSES - _num_g} remaining)</span>"
                 f"&nbsp;<span style='color:#f39c12;font-size:0.85rem;'>({len(_filt)} possible names)</span>",
                 unsafe_allow_html=True,
@@ -655,7 +658,6 @@ with tab_wordle:
     with header_c:
         st.markdown("""
 <div style="text-align:center;padding:24px 0 8px;">
-    <span style="font-size:2.8rem;">🎬</span>
     <h1 style="margin:4px 0;font-size:2rem;letter-spacing:1px;">Actor Wordle</h1>
     <p style="color:#aaa;font-size:0.95rem;">Guess the mystery person from the streaming catalog.<br>
     A new clue is revealed after each wrong guess.</p>
@@ -664,7 +666,7 @@ with tab_wordle:
         st.divider()
 
     with clues_c:
-        st.markdown("### 🕵️ Clues So Far")
+        st.markdown("### Clues So Far")
         for i, clue_text in enumerate(clues_to_show):
             if i == 5 and not st.session_state.won:
                 try:
@@ -736,25 +738,25 @@ with tab_wordle:
                 f'border:2px solid #2ecc71;border-top:4px solid #2ecc71;border-radius:14px;'
                 f'padding:32px 24px;margin-top:12px;text-align:center;'
                 f'box-shadow:0 0 40px rgba(46,204,113,0.25);">'
-                f'<div style="font-size:3rem;margin-bottom:8px;">🎉</div>'
+                f''
                 f'<div style="color:#2ecc71;font-size:0.75rem;text-transform:uppercase;letter-spacing:3px;margin-bottom:10px;">Correct!</div>'
                 f'<div style="color:#ffffff;font-size:2rem;font-weight:900;letter-spacing:-0.5px;margin-bottom:6px;">{mystery["name"]}</div>'
                 f'<div style="color:#5dde8a;font-size:1rem;margin-bottom:18px;">Solved in <b>{num_guesses}</b> {guess_word}</div>'
                 f'<div style="display:inline-flex;gap:24px;justify-content:center;flex-wrap:wrap;'
                 f'background:rgba(46,204,113,0.08);border-radius:10px;padding:12px 24px;">'
-                f'<span style="color:#aaa;font-size:0.9rem;">🎭 {str(mystery["primary_role"]).title()}</span>'
-                f'<span style="color:#aaa;font-size:0.9rem;">🎬 {int(mystery["title_count"])} titles</span>'
-                f'<span style="color:#aaa;font-size:0.9rem;">⭐ {float(mystery["avg_imdb"]):.1f} avg IMDb</span>'
+                f'<span style="color:#aaa;font-size:0.9rem;">{str(mystery["primary_role"]).title()}</span>'
+                f'<span style="color:#aaa;font-size:0.9rem;">{int(mystery["title_count"])} titles</span>'
+                f'<span style="color:#aaa;font-size:0.9rem;">Avg IMDb {float(mystery["avg_imdb"]):.1f}</span>'
                 f'</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("🔄 New Game", type="primary", key="new_game_won"):
+            if st.button("New Game", type="primary", key="new_game_won"):
                 for k in ["seed", "mystery", "guesses", "won", "lost", "_balloons_shown"]:
                     del st.session_state[k]
         elif st.session_state.lost:
-            st.error(f"😔 Out of guesses! The answer was **{mystery['name']}**.")
+            st.error(f"Out of guesses! The answer was **{mystery['name']}**.")
             st.markdown(
                 f'<div style="background:#2d1a1a;border:1px solid #e74c3c;border-radius:10px;padding:16px 20px;margin-top:8px;">'
                 f'<b style="font-size:1.2rem;color:#e74c3c;">{mystery["name"]}</b><br>'
@@ -764,17 +766,13 @@ with tab_wordle:
                 unsafe_allow_html=True,
             )
             st.markdown("<br>", unsafe_allow_html=True)
-            if st.button("🔄 New Game", type="secondary", key="new_game_lost"):
+            if st.button("New Game", type="secondary", key="new_game_lost"):
                 for k in ["seed", "mystery", "guesses", "won", "lost", "_balloons_shown"]:
                     if k in st.session_state:
                         del st.session_state[k]
 
     with footer_c:
-        st.markdown(
-            '<div style="text-align:center;color:#555;font-size:0.8rem;padding:24px 0 8px;">'
-            'Using real data from the Streaming Merger catalog</div>',
-            unsafe_allow_html=True,
-        )
+        pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -787,7 +785,6 @@ with tab_arena:
 
     st.markdown("""
 <div style="text-align:center;padding:24px 0 8px;">
-    <span style="font-size:2.8rem;">⚔️</span>
     <h1 style="margin:4px 0;font-size:2rem;letter-spacing:1px;">Head-to-Head Arena</h1>
     <p style="color:#aaa;font-size:0.95rem;">Pick any two people from the streaming catalog and see who wins.</p>
 </div>
@@ -795,7 +792,7 @@ with tab_arena:
 
     st.divider()
 
-    if st.button("🎲 Random Battle", type="secondary", key="arena_random"):
+    if st.button("Random Battle", type="secondary", key="arena_random"):
         sample = arena_pool.sample(2, random_state=random.randint(0, 99999))
         st.session_state["arena_a"] = sample.iloc[0]["person_id"]
         st.session_state["arena_b"] = sample.iloc[1]["person_id"]
@@ -842,13 +839,7 @@ with tab_arena:
         stats_b = get_cached_stats(pid_b, person_stats, credits, titles)
 
         if stats_a and stats_b:
-            STAT_ICONS = {
-                "Primary Role": "🎭", "Primary Platform": "📺", "Career": "📅",
-                "Best Title": "🏅", "Avg IMDb Score": "⭐", "Total Titles": "🎬",
-                "Genre Diversity": "🎨", "Platform Diversity": "📡",
-                "Career Span (yrs)": "⏳", "Netflix Titles": "🔴",
-                "Max Titles": "🟣", "Influence Score": "📊",
-            }
+            STAT_ICONS = {}
 
             def battle_row(label, val_a, val_b, higher_wins=True, is_str=False):
                 if is_str or val_a is None or val_b is None:
@@ -861,8 +852,8 @@ with tab_arena:
                 color_b = GOLD if win_b else ("#ccc" if not win_a else "#666")
                 bg_a = "rgba(0,180,216,0.08)" if win_a else "transparent"
                 bg_b = "rgba(243,156,18,0.08)" if win_b else "transparent"
-                badge_a = ' <span style="font-size:0.9rem;">🏆</span>' if win_a else ""
-                badge_b = ' <span style="font-size:0.9rem;">🏆</span>' if win_b else ""
+                badge_a = ' <span style="font-size:0.75rem;color:#aaa;">W</span>' if win_a else ""
+                badge_b = ' <span style="font-size:0.75rem;color:#aaa;">W</span>' if win_b else ""
                 icon = STAT_ICONS.get(label, "")
                 bar = ""
                 if not is_str and val_a is not None and val_b is not None:
@@ -877,7 +868,7 @@ with tab_arena:
                 return (
                     f'<tr>'
                     f'<td style="padding:14px 12px;border-bottom:1px solid #1e1e1e;text-align:center;vertical-align:middle;">'
-                    f'<span style="color:#666;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.8px;">{icon} {label}</span></td>'
+                    f'<span style="color:#666;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.8px;">{label}</span></td>'
                     f'<td style="background:{bg_a};padding:14px 16px;border-bottom:1px solid #1e1e1e;text-align:right;vertical-align:middle;">'
                     f'<span style="color:{color_a};font-weight:{"700" if win_a else "400"};font-size:1rem;">{val_a}{badge_a}</span>{bar}</td>'
                     f'<td style="background:{bg_b};padding:14px 16px;border-bottom:1px solid #1e1e1e;text-align:left;vertical-align:middle;">'
@@ -942,20 +933,26 @@ with tab_arena:
             st.markdown(table_html, unsafe_allow_html=True)
 
             winner_color = TEAL if overall_winner == stats_a["name"] else (GOLD if overall_winner == stats_b["name"] else "#aaa")
-            winner_label = "🏆 " + overall_winner if overall_winner != "Tie" else "🤝 It's a Tie!"
+            winner_label = overall_winner if overall_winner != "Tie" else "It's a Tie!"
             score_line   = f"{wins_a} – {wins_b} stat categories" if overall_winner != "Tie" else "Equal across all categories"
             st.markdown(
                 f'<div style="background:linear-gradient(135deg,#0d1117,#0d1b2a);border:1px solid {winner_color}55;border-top:3px solid {winner_color};border-radius:12px;padding:24px;margin-top:20px;text-align:center;">'
                 f'<div style="color:#555;font-size:0.7rem;text-transform:uppercase;letter-spacing:2px;margin-bottom:8px;">Overall Winner</div>'
                 f'<div style="color:{winner_color};font-size:2.2rem;font-weight:800;">{winner_label}</div>'
                 f'<div style="color:#555;font-size:0.85rem;margin:8px 0 16px;">{score_line}</div>'
-                f'<div style="color:#888;font-size:0.85rem;padding-top:14px;border-top:1px solid #1e1e1e;">🎬 <em>Merger Insight:</em> {merger_insight}</div>'
+                f'<div style="color:#888;font-size:0.85rem;padding-top:14px;border-top:1px solid #1e1e1e;"><em>Merger Insight:</em> {merger_insight}</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
 
-    st.markdown(
-        '<div style="text-align:center;color:#555;font-size:0.8rem;padding:32px 0 8px;">'
-        'Using real data from the Streaming Merger catalog</div>',
-        unsafe_allow_html=True,
-    )
+# ── footer ─────────────────────────────────────────────────────────────────────
+st.divider()
+st.markdown(
+    '<div style="color:#555;font-size:0.8em;text-align:center;padding:8px 0 16px;">'
+    'Hypothetical merger for academic analysis. '
+    'Data is a snapshot (mid-2023). '
+    'All insights are illustrative, not prescriptive. '
+    'As of Feb 26, 2026, Netflix withdrew from this acquisition.'
+    '</div>',
+    unsafe_allow_html=True,
+)

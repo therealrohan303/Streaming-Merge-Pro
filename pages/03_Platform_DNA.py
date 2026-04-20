@@ -154,7 +154,7 @@ def _render_inline_title_detail(title_id, all_df, enriched_df, credits_df=None):
                 st.markdown(
                     f'<span style="background:rgba(46,204,113,0.15);color:#2ecc71;'
                     f'border:1px solid #2ecc71;padding:4px 12px;border-radius:12px;'
-                    f'font-size:0.83em;font-weight:600;">🏆 {int(_aw)} wins{_noms_str}</span>',
+                    f'font-size:0.83em;font-weight:600;">{int(_aw)} wins{_noms_str}</span>',
                     unsafe_allow_html=True,
                 )
 
@@ -526,13 +526,10 @@ if umap_coords is not None:
             # ── Landscape insights ────────────────────────────────────────────
             insights = compute_landscape_insights_v2(landscape, cluster_summaries)
             if insights:
-                _INSIGHT_ICONS = {"crown": "👑", "overlap": "🔀", "focus": "🎯", "diverge": "↔️"}
                 items_html = "".join(
                     f'<div style="margin-bottom:8px;padding:8px 12px;'
                     f'background:rgba(255,255,255,0.03);border-radius:6px;'
                     f'border-left:3px solid {CARD_ACCENT};">'
-                    f'<span style="font-size:1.1em;margin-right:8px;">'
-                    f'{_INSIGHT_ICONS.get(ins.get("icon",""), "•")}</span>'
                     f'<span style="color:{CARD_TEXT};font-size:0.9em;line-height:1.6;">'
                     f'{ins["text"]}</span></div>'
                     for ins in insights
@@ -541,7 +538,7 @@ if umap_coords is not None:
                     f'<div style="background:{CARD_BG};border:1px solid {CARD_BORDER};'
                     f'border-radius:10px;padding:14px 18px;margin-bottom:14px;">'
                     f'<div style="color:{CARD_ACCENT};font-weight:700;font-size:1em;margin-bottom:8px;">'
-                    f'📊 Landscape Insights</div>'
+                    f'Landscape Insights</div>'
                     f'{items_html}</div>',
                     unsafe_allow_html=True,
                 )
@@ -688,7 +685,7 @@ if umap_coords is not None:
                     fig_landscape.add_trace(go.Scatter(
                         x=search_matches["umap_x"], y=search_matches["umap_y"],
                         mode="markers+text",
-                        name="🔍 Search results",
+                        name="Search results",
                         marker=dict(size=14, symbol="star", color="#FFD700",
                                     line=dict(width=1.5, color="#fff")),
                         text=search_matches["title"],
@@ -825,7 +822,7 @@ if umap_coords is not None:
                             if _aw_tot > 5:
                                 _enr_lines.append(
                                     f'<div style="color:{CARD_TEXT_MUTED};font-size:0.82em;margin-bottom:3px;">'
-                                    f'🏆 <span style="color:#FFD700;font-weight:600;">'
+                                    f'<span style="color:#FFD700;font-weight:600;">'
                                     f'{_aw_tot:,} total award wins</span>'
                                     f' <span style="color:{CARD_TEXT_MUTED};">across all titles in this neighborhood</span>'
                                     f'</div>'
@@ -918,7 +915,7 @@ if umap_coords is not None:
                                 aw_badge = (
                                     f'<span style="background:rgba(46,204,113,0.15);color:#2ecc71;'
                                     f'border-radius:4px;padding:1px 5px;font-size:0.68em;'
-                                    f'font-weight:600;margin-right:3px;">🏆 {int(ttitle["award_wins"])}W</span>'
+                                    f'font-weight:600;margin-right:3px;">{int(ttitle["award_wins"])}W</span>'
                                 )
 
                             # Genre pills (max 2)
@@ -943,7 +940,8 @@ if umap_coords is not None:
                                 f'<div style="width:100%;height:150px;border-radius:6px 6px 0 0;'
                                 f'background:{t_color}22;border-bottom:2px solid {t_color};'
                                 f'display:flex;align-items:center;justify-content:center;'
-                                f'font-size:2em;">🎬</div>'
+                                f'font-size:1.4em;color:{t_color};font-weight:700;">'
+                                f'{ttitle["title"][0].upper()}</div>'
                             )
                             st.markdown(
                                 f'<div style="background:{CARD_BG};border:1px solid {CARD_BORDER};'
@@ -959,7 +957,7 @@ if umap_coords is not None:
                                 f'<div style="margin-bottom:3px;">{aw_badge}</div>'
                                 f'<div style="color:{CARD_TEXT_MUTED};font-size:0.72em;">'
                                 f'<span style="color:{t_color};font-weight:600;">{t_pname}</span>'
-                                f' · {t_yr} · ⭐ {t_imdb}</div>'
+                                f' · {t_yr} · IMDb {t_imdb}</div>'
                                 f'<div style="margin-top:3px;">{genres_html}</div>'
                                 f'</div></div></div>',
                                 unsafe_allow_html=True,
@@ -1073,13 +1071,6 @@ for _g_list in raw_df["genres"].dropna():
             _all_genre_counts[_g] = _all_genre_counts.get(_g, 0) + 1
 _sorted_genres = sorted(_all_genre_counts.keys(), key=lambda g: -_all_genre_counts[g])
 
-_GENRE_ICONS = {
-    "drama": "🎭", "comedy": "😄", "thriller": "😰", "action": "💥",
-    "romance": "💕", "documentation": "🎥", "crime": "🔍", "family": "👨‍👩‍👧",
-    "animation": "✏️", "scifi": "🚀", "fantasy": "🐉", "horror": "👻",
-    "music": "🎵", "history": "📜", "western": "🤠", "war": "⚔️",
-    "sport": "⚽", "reality": "📺", "european": "🌍",
-}
 _GENRE_DISPLAY_NAMES = {"documentation": "Documentary", "scifi": "Sci-Fi"}
 
 
@@ -1102,11 +1093,10 @@ if _quiz_phase == "A":
     _gcols = st.columns(4)
     for gi, gkey in enumerate(_top_genres_quiz):
         with _gcols[gi % 4]:
-            icon = _GENRE_ICONS.get(gkey, "🎬")
             label = _GENRE_DISPLAY_NAMES.get(gkey, gkey.title())
             is_sel = gkey in sel_genres
             if st.button(
-                f"{icon} {label}" + (" ✓" if is_sel else ""),
+                label + (" ✓" if is_sel else ""),
                 key=f"gtoggle_{gkey}",
                 use_container_width=True,
                 type="primary" if is_sel else "secondary",
@@ -1257,17 +1247,17 @@ elif _quiz_phase == "A2":
     tp_c1, tp_c2, tp_c3 = st.columns(3)
     type_pref = st.session_state.get("_dna_type_pref", "Both")
     with tp_c1:
-        if st.button("🎥 Movies", use_container_width=True,
+        if st.button("Movies", use_container_width=True,
                      type="primary" if type_pref == "Movies" else "secondary"):
             st.session_state["_dna_type_pref"] = "Movies"
             st.rerun()
     with tp_c2:
-        if st.button("📺 Shows", use_container_width=True,
+        if st.button("Shows", use_container_width=True,
                      type="primary" if type_pref == "Shows" else "secondary"):
             st.session_state["_dna_type_pref"] = "Shows"
             st.rerun()
     with tp_c3:
-        if st.button("✨ Both", use_container_width=True,
+        if st.button("Both", use_container_width=True,
                      type="primary" if type_pref == "Both" else "secondary"):
             st.session_state["_dna_type_pref"] = "Both"
             st.rerun()
@@ -1344,7 +1334,8 @@ elif _quiz_phase == "B":
                 st.markdown(
                     f'<div style="background:{CARD_BG};border:2px solid {pc};border-radius:8px;'
                     f'height:200px;display:flex;align-items:center;justify-content:center;'
-                    f'color:{CARD_TEXT_MUTED};font-size:2em;">🎬</div>',
+                    f'color:{pc};font-size:1.8em;font-weight:700;">'
+                    f'{(title.get("title") or "?")[0].upper()}</div>',
                     unsafe_allow_html=True,
                 )
 
@@ -1362,7 +1353,7 @@ elif _quiz_phase == "B":
                     f'<span style="background:rgba(46,204,113,0.15);color:#2ecc71;'
                     f'border:1px solid #2ecc71;padding:2px 8px;border-radius:10px;'
                     f'font-size:0.78em;font-weight:600;margin-right:6px;">'
-                    f'🏆 {int(title["award_wins"])} wins</span>'
+                    f'{int(title["award_wins"])} wins</span>'
                 )
 
             # Platform badges
@@ -1389,7 +1380,7 @@ elif _quiz_phase == "B":
                 f'{title["title"]}</div>'
                 f'<div style="margin-bottom:8px;">{aw_badge}{plat_badges}</div>'
                 f'<div style="color:{CARD_TEXT_MUTED};font-size:0.88em;margin-bottom:8px;">'
-                f'{t_year} · {t_type} · ⭐ {t_imdb}</div>'
+                f'{t_year} · {t_type} · IMDb {t_imdb}</div>'
                 f'<div style="margin-bottom:12px;">{genre_pills}</div>'
                 f'<div style="color:{CARD_TEXT};font-size:0.92em;line-height:1.6;">'
                 f'{title.get("description","")}</div>'
@@ -1400,12 +1391,12 @@ elif _quiz_phase == "B":
             # Swipe buttons
             b1, b2 = st.columns(2)
             with b1:
-                if st.button("👎  Not for me", key=f"quiz_pass_{current_idx}",
+                if st.button("Pass", key=f"quiz_pass_{current_idx}",
                              use_container_width=True):
                     st.session_state["dna_quiz_current"] = current_idx + 1
                     st.rerun()
             with b2:
-                if st.button("❤️  I'd watch this!", key=f"quiz_like_{current_idx}",
+                if st.button("I'd watch this!", key=f"quiz_like_{current_idx}",
                              use_container_width=True, type="primary"):
                     st.session_state["dna_quiz_liked"].append(title["id"])
                     st.session_state["dna_quiz_current"] = current_idx + 1
@@ -1605,7 +1596,7 @@ elif _quiz_phase == "C":
                             r_aw_badge = (
                                 f'<span style="background:rgba(46,204,113,0.15);color:#2ecc71;'
                                 f'border-radius:4px;padding:1px 5px;font-size:0.68em;'
-                                f'font-weight:600;margin-right:3px;">🏆 {_aw_n} {_aw_word}</span>'
+                                f'font-weight:600;margin-right:3px;">{_aw_n} {_aw_word}</span>'
                             )
                         r_genres = "".join(
                             f'<span style="display:inline-block;background:rgba(255,255,255,0.06);'
@@ -1621,7 +1612,9 @@ elif _quiz_phase == "C":
                             if _rec_poster else
                             f'<div style="width:100%;height:150px;border-radius:6px 6px 0 0;'
                             f'background:{best_color}22;border-bottom:2px solid {best_color};'
-                            f'display:flex;align-items:center;justify-content:center;font-size:2em;">🎬</div>'
+                            f'display:flex;align-items:center;justify-content:center;'
+                            f'font-size:1.4em;color:{best_color};font-weight:700;>'
+                            f'{rec["title"][0].upper()}</div>'
                         )
                         _rec_is_active = st.session_state.get("dna_quiz_rec_detail_id") == rec.get("id")
                         st.markdown(
@@ -1637,7 +1630,7 @@ elif _quiz_phase == "C":
                             f'<div style="margin-top:auto;">'
                             f'<div style="margin-bottom:3px;">{r_aw_badge}</div>'
                             f'<div style="color:{CARD_TEXT_MUTED};font-size:0.72em;">'
-                            f'{r_year} · ⭐ {r_imdb} · {rec.get("type","")}</div>'
+                            f'{r_year} · IMDb {r_imdb} · {rec.get("type","")}</div>'
                             f'<div style="margin-top:3px;">{r_genres}</div>'
                             f'</div></div></div>',
                             unsafe_allow_html=True,
@@ -1759,9 +1752,10 @@ elif _quiz_phase == "C":
 st.divider()
 st.markdown(
     '<div style="color:#555;font-size:0.8em;text-align:center;padding:8px 0 16px;">'
-    'Hypothetical merger for academic analysis. Data is a snapshot (mid-2023). '
+    'Hypothetical merger for academic analysis. '
+    'Data is a snapshot (mid-2023). '
     'All insights are illustrative, not prescriptive. '
-    'Update: As of Feb 26, 2026, Netflix withdrew from this acquisition after Paramount Skydance\'s competing bid was deemed superior by the WBD board.'
+    'As of Feb 26, 2026, Netflix withdrew from this acquisition.'
     '</div>',
     unsafe_allow_html=True,
 )

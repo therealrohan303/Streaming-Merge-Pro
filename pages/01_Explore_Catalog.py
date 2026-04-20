@@ -435,7 +435,7 @@ with right_col:
                             f'<span style="background:rgba(46,204,113,0.15);color:#2ecc71;'
                             f'border:1px solid #2ecc71;padding:4px 12px;border-radius:12px;'
                             f'font-size:0.83em;font-weight:600;">'
-                            f'🏆 {int(_aw)} wins{_noms_str}</span>',
+                            f'{int(_aw)} wins{_noms_str}</span>',
                             unsafe_allow_html=True,
                         )
 
@@ -704,7 +704,7 @@ with right_col:
                     f'<a href="/04_Discovery_Engine" target="_self" style="display:inline-block;'
                     f'background:{CARD_BG};border:1px solid {_MERGED_COLOR};color:{_MERGED_COLOR};'
                     f'padding:7px 16px;border-radius:6px;font-size:0.85em;font-weight:600;'
-                    f'text-decoration:none;">✨ Deeper recommendations → Discovery Engine</a>'
+                    f'text-decoration:none;">Deeper recommendations → Discovery Engine</a>'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
@@ -737,7 +737,7 @@ st.markdown(
     'Hypothetical merger for academic analysis. '
     'Data is a snapshot (mid-2023). '
     'All insights are illustrative, not prescriptive. '
-    'Update: As of Feb 26, 2026, Netflix withdrew from this acquisition after Paramount Skydance\'s competing bid was deemed superior by the WBD board.'
+    'As of Feb 26, 2026, Netflix withdrew from this acquisition.'
     '</div>',
     unsafe_allow_html=True,
 )

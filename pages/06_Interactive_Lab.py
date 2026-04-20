@@ -23,11 +23,14 @@ from src.config import (
 from src.data.loaders import (
     deduplicate_titles,
     load_enriched_titles,
+    load_genome_vectors,
     load_greenlight_model,
+    load_imdb_principals,
     load_person_stats,
     load_tfidf_vectorizer,
 )
-from src.analysis.scoring import bayesian_imdb, compute_quality_score
+from src.analysis.discovery import vibe_search
+from src.analysis.scoring import bayesian_imdb, compute_quality_score, format_votes
 from src.analysis.lab import predict_title
 from src.ui.badges import (
     page_header_html,
@@ -138,6 +141,126 @@ def _get_acquisition_targets():
     return pd.DataFrame()
 
 
+@st.cache_data
+def _box_office_stats(_enriched):
+    """Per-genre median box-office/budget ratio. Returns (genre_medians, global_median, counts)."""
+    df = _enriched[
+        _enriched.get("box_office_usd", pd.Series(dtype=float)).notna()
+        & _enriched.get("budget_usd", pd.Series(dtype=float)).notna()
+        & (_enriched.get("budget_usd", pd.Series(0)) > 0)
+    ].copy()
+    if df.empty:
+        return {}, 1.8, {}
+    df["_ratio"] = df["box_office_usd"] / df["budget_usd"]
+    per_genre = {}
+    for _, r in df.iterrows():
+        gl = r.get("genres")
+        if isinstance(gl, (list, np.ndarray)):
+            for g in gl:
+                per_genre.setdefault(g, []).append(r["_ratio"])
+    medians = {g: float(np.median(v)) for g, v in per_genre.items() if len(v) >= 5}
+    counts = {g: len(v) for g, v in per_genre.items()}
+    return medians, float(df["_ratio"].median()), counts
+
+
+@st.cache_data
+def _platform_profiles(_enriched):
+    """Per-platform median IMDb + movie ratio, used by Platform Fit."""
+    out = {}
+    for plat in ALL_PLATFORMS:
+        sub = _enriched[_enriched["platform"] == plat] if "platform" in _enriched.columns else _enriched.iloc[0:0]
+        imdb_series = pd.to_numeric(sub["imdb_score"], errors="coerce").dropna() if len(sub) else pd.Series(dtype=float)
+        out[plat] = {
+            "median_imdb": float(imdb_series.median()) if not imdb_series.empty else 6.5,
+            "movie_ratio": float((sub["type"] == "Movie").mean()) if len(sub) else 0.5,
+            "count": len(sub),
+        }
+    return out
+
+
+# ─── Card-render helpers (mirrored from Discovery Engine) ────────────────────
+def _gs_sim_badge_html(score: float) -> str:
+    pct = int(round(max(0.0, min(1.0, score)) * 100))
+    if score >= 0.75:
+        bg, fg = "rgba(46,204,113,0.18)", "#2ecc71"
+    elif score >= 0.60:
+        bg, fg = "rgba(243,156,18,0.18)", "#f39c12"
+    else:
+        bg, fg = "rgba(136,136,136,0.18)", CARD_TEXT_MUTED
+    return (
+        f'<span style="background:{bg};color:{fg};padding:3px 9px;'
+        f'border-radius:10px;font-size:0.72em;font-weight:600;white-space:nowrap;">'
+        f'{pct}% match</span>'
+    )
+
+
+def _gs_poster_html(url, title, platform_keys, width=90, height=130) -> str:
+    initial = (title[0].upper() if title else "?")
+    placeholder = (
+        f'<div style="width:{width}px;height:{height}px;background:#2a2a3e;'
+        f'border-radius:6px;display:flex;align-items:center;justify-content:center;'
+        f'font-size:{max(width//3,14)}px;font-weight:700;color:#fff;flex-shrink:0;margin:0 auto;">'
+        f'{initial}</div>'
+    )
+    if not url or str(url) in ("nan", "None", ""):
+        return placeholder
+    return (
+        f'<img src="{url}" width="{width}" height="{height}" '
+        f'style="object-fit:cover;border-radius:6px;flex-shrink:0;display:block;margin:0 auto;" />'
+    )
+
+
+def _gs_genre_pills_html(genres, max_n=3) -> str:
+    if genres is None:
+        return ""
+    lst = list(genres) if isinstance(genres, np.ndarray) else genres
+    if not isinstance(lst, (list, tuple)):
+        return ""
+    return " ".join(
+        f'<span style="background:#2a2a3e;color:{CARD_TEXT_MUTED};padding:1px 6px;'
+        f'border-radius:8px;font-size:0.65em;margin-right:2px;">{str(g).title()}</span>'
+        for g in lst[:max_n]
+    )
+
+
+def _gs_render_similar_card(row, score: float) -> None:
+    """Compact vertical card for Most Similar Titles grid."""
+    title = row.get("title", "Untitled")
+    year = row.get("release_year")
+    imdb = row.get("imdb_score")
+    votes = row.get("imdb_votes")
+    genres = row.get("genres", [])
+    platforms = row.get("platforms") or ([row["platform"]] if row.get("platform") else [])
+    poster_url = row.get("poster_url")
+
+    imdb_str = f"{imdb:.1f}" if pd.notna(imdb) else "N/A"
+    votes_str = format_votes(votes) if pd.notna(votes) and votes else ""
+    year_str = str(int(year)) if pd.notna(year) else ""
+    badge_html = platform_badges_html(platforms)
+    genre_html = _gs_genre_pills_html(genres, max_n=2)
+    sim_badge = _gs_sim_badge_html(score)
+    poster_html = _gs_poster_html(poster_url, title, platforms, width=110, height=160)
+    votes_html = (
+        f' <span style="color:{CARD_TEXT_MUTED};">({votes_str})</span>' if votes_str else ""
+    )
+
+    st.markdown(
+        f'<div style="background:{CARD_BG};border:1px solid {CARD_BORDER};'
+        f'border-top:3px solid {CARD_ACCENT};border-radius:8px;padding:8px;'
+        f'height:100%;display:flex;flex-direction:column;gap:6px;">'
+        f'{poster_html}'
+        f'<div style="font-weight:700;color:{CARD_TEXT};font-size:0.82em;line-height:1.2;'
+        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{title}">{title}</div>'
+        f'<div style="color:{CARD_TEXT_MUTED};font-size:0.72em;">{year_str}</div>'
+        f'<div>{badge_html}</div>'
+        f'<div style="color:{CARD_TEXT};font-size:0.75em;">IMDb {imdb_str}{votes_html}</div>'
+        f'<div>{genre_html}</div>'
+        f'<div style="margin-top:auto;">{sim_badge}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
 ALL_GENRES_LIST = [
     "action", "animation", "comedy", "crime", "documentation",
     "drama", "european", "family", "fantasy", "history",
@@ -154,7 +277,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab1, tab2, tab3 = st.tabs(["🎬 Greenlight Studio", "🎪 Franchise Explorer", "🏆 Draft Room"])
+tab1, tab2, tab3 = st.tabs(["Greenlight Studio", "Franchise Explorer", "Draft Room"])
 
 # =============================================================================
 # TAB 1: GREENLIGHT STUDIO
@@ -213,28 +336,31 @@ with tab1:
                 horizontal=True,
                 key="gs_cert_movie",
             )
-            budget_tier_choice = st.radio(
-                "Budget Tier",
-                ["Low (<$10M)", "Mid ($10–50M)", "High ($50–200M)", "Blockbuster (>$200M)"],
-                horizontal=False,
-                key="gs_budget",
+            budget_m = st.slider(
+                "Budget (USD millions)",
+                min_value=1, max_value=500, value=25, step=1,
+                format="$%dM",
+                key="gs_budget_m",
+            )
+            st.caption(
+                "e.g. $8M indie · $45M mid-budget · $120M studio tent-pole · $300M franchise blockbuster"
             )
             has_franchise = st.toggle("Part of an existing franchise?", key="gs_franchise")
 
         # Map inputs to model features
         country_map = {"US/UK": 2, "Europe": 1, "Asia Pacific": 1, "Other": 0}
         cert_map_m = {"G/PG": 0, "PG-13": 1, "R/NC-17": 2}
-        budget_map = {
-            "Low (<$10M)": 1, "Mid ($10–50M)": 2,
-            "High ($50–200M)": 3, "Blockbuster (>$200M)": 4,
-        }
+        if   budget_m < 10:  budget_tier_int = 1
+        elif budget_m < 50:  budget_tier_int = 2
+        elif budget_m < 200: budget_tier_int = 3
+        else:                budget_tier_int = 4
         features_dict = {
             "genres": genres,
             "runtime": runtime,
             "release_year": rel_year,
             "production_country_tier": country_map.get(country, 0),
             "age_cert_tier": cert_map_m.get(age_cert, 2),
-            "budget_tier": budget_map.get(budget_tier_choice, 1),
+            "budget_tier": budget_tier_int,
             "has_franchise": int(has_franchise),
             "award_genre_avg": 0,  # computed below after enriched load
             "decade": (rel_year // 10) * 10,
@@ -280,7 +406,7 @@ with tab1:
             "decade": (rel_year // 10) * 10,
         }
 
-    consult_btn = st.button("🎬 Consult the Studio", type="primary", use_container_width=True)
+    consult_btn = st.button("Consult the Studio", type="primary", use_container_width=True)
 
     # ── Output ────────────────────────────────────────────────────────────────
     if consult_btn:
@@ -310,44 +436,42 @@ with tab1:
         enriched = _get_enriched()
         pred = res["prediction"]
         genres_sel = st.session_state.get("gs_genres", [])
+        desc_text = st.session_state.get("gs_desc", "").strip()
+        budget_m = st.session_state.get("gs_budget_m", 25)
 
-        # ── Row 1: Predicted Performance | Most Similar Titles ────────────────
-        col_c1, col_c2 = st.columns(2)
+        # Quality band
+        if   pred < 5.5:  band_label, band_color = "Likely to underperform", "#e74c3c"
+        elif pred < 6.5:  band_label, band_color = "Moderate — competitive but undistinguished", "#f39c12"
+        elif pred < 7.5:  band_label, band_color = "Strong — platform-worthy", "#2ecc71"
+        else:             band_label, band_color = "Exceptional — likely award/prestige tier", "#FFD700"
 
-        with col_c1:
-            # Success tier
-            if pred >= 8.0:
-                tier, tier_color = "Blockbuster", "#FFD700"
-            elif pred >= 7.0:
-                tier, tier_color = "Strong", "#2ecc71"
-            elif pred >= 6.0:
-                tier, tier_color = "Moderate", "#f39c12"
-            else:
-                tier, tier_color = "Risky", "#e74c3c"
+        cv_rmse_val = res.get("cv_rmse")
+        cv_str_for_footnote = f"{cv_rmse_val:.3f}" if isinstance(cv_rmse_val, (int, float)) else "N/A"
+        gauge_pct = max(0, min(100, (pred - 1) / 9 * 100))
 
-            uncertainty = res.get("uncertainty", 0.4)
-            cv_rmse_std = getattr(load_greenlight_model(
-                "movie" if content_type == "Movie" else "show"
-            ), "cv_rmse_std_", 0.4)
-            band = round(cv_rmse_std, 1) or 0.4
+        # ── Row 1: Predicted IMDb Score | Box Office Projection (movies) ─────
+        col_r1a, col_r1b = st.columns(2)
 
-            # Gauge: position = (pred - 1) / 9 * 100%
-            gauge_pct = max(0, min(100, (pred - 1) / 9 * 100))
-
+        with col_r1a:
+            st.markdown(
+                section_header_html(
+                    "Predicted IMDb Score",
+                    "Based on comparable titles in the catalog.",
+                ),
+                unsafe_allow_html=True,
+            )
             st.markdown(
                 f"""
                 <div style="background:{CARD_BG};border:1px solid {CARD_BORDER};
-                            border-top:3px solid {CARD_ACCENT};border-radius:8px;padding:16px;">
-                  <div style="color:{CARD_TEXT_MUTED};font-size:0.8em;text-transform:uppercase;
-                              letter-spacing:1px;margin-bottom:4px;">Predicted Performance</div>
-                  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
-                    <span style="font-size:2.8em;font-weight:800;color:{CARD_ACCENT};">{pred:.1f}</span>
-                    <div>
-                      <div style="color:{CARD_TEXT_MUTED};font-size:0.85em;">± {band:.1f} uncertainty</div>
-                      <span style="background:{tier_color}22;color:{tier_color};
-                                   padding:2px 10px;border-radius:10px;font-size:0.82em;
-                                   border:1px solid {tier_color};font-weight:600;">{tier}</span>
-                    </div>
+                            border-top:3px solid {band_color};border-radius:8px;padding:16px;">
+                  <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:8px;">
+                    <span style="font-size:2.8em;font-weight:800;color:{band_color};">{pred:.1f}</span>
+                    <span style="color:{CARD_TEXT_MUTED};font-size:0.95em;">/ 10 IMDb</span>
+                  </div>
+                  <div style="background:{band_color}22;color:{band_color};padding:5px 12px;
+                              border-radius:10px;font-size:0.82em;border:1px solid {band_color};
+                              font-weight:600;display:inline-block;margin-bottom:10px;">
+                    {band_label}
                   </div>
                   <div style="position:relative;height:18px;border-radius:9px;overflow:hidden;
                               background:linear-gradient(90deg,#e74c3c 0%,#e74c3c 22%,
@@ -362,290 +486,400 @@ with tab1:
                     <span>1 — Poor</span><span>6.5</span><span>8 — Great</span><span>10</span>
                   </div>
                   <div style="color:{CARD_TEXT_MUTED};font-size:0.72em;margin-top:8px;">
-                    GradientBoostingRegressor · 5-fold CV RMSE {res.get('cv_rmse', 'N/A') or 'N/A'}
+                    GradientBoostingRegressor · 5-fold CV RMSE {cv_str_for_footnote}
                   </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-        with col_c2:
-            # Most Similar Titles via TF-IDF cosine similarity
-            gs_desc_val = st.session_state.get("gs_desc", "").strip()
-            st.markdown(
-                f'<div style="background:{CARD_BG};border:1px solid {CARD_BORDER};'
-                f'border-top:3px solid {CARD_ACCENT};border-radius:8px;padding:16px;">',
-                unsafe_allow_html=True,
-            )
-            st.markdown(
-                f'<div style="color:{CARD_TEXT_MUTED};font-size:0.8em;text-transform:uppercase;'
-                f'letter-spacing:1px;margin-bottom:8px;">Most Similar Titles</div>',
-                unsafe_allow_html=True,
-            )
-            if gs_desc_val:
-                try:
-                    vec, mat, id_list, enriched_with_desc = _load_catalog_tfidf_matrix()
-                    query_vec = vec.transform([gs_desc_val])
-                    sims = cosine_similarity(query_vec, mat).flatten()
-
-                    # Genre boost
-                    if genres_sel:
-                        for i, tid in enumerate(id_list):
-                            row_genres = enriched_with_desc.iloc[i].get("genres", []) if hasattr(enriched_with_desc, "iloc") else []
-                            if not isinstance(row_genres, (list, np.ndarray)):
-                                continue
-                            if any(g in row_genres for g in genres_sel):
-                                sims[i] = min(1.0, sims[i] * 1.2)
-
-                    top_idx = np.argsort(sims)[::-1][:5]
-                    for idx in top_idx:
-                        row = enriched_with_desc.iloc[idx]
-                        sim_score = sims[idx]
-                        if sim_score < 0.05:
-                            continue
-                        imdb_str = f"{row['imdb_score']:.1f}" if pd.notna(row.get("imdb_score")) else "N/A"
-                        year_str = str(int(row["release_year"])) if pd.notna(row.get("release_year")) else ""
-                        poster_url = row.get("poster_url", "")
-                        plat = row.get("platform", "")
-                        badge_html = platform_badges_html(plat) if plat else ""
-                        if pd.notna(poster_url) and str(poster_url).startswith("http"):
-                            poster_html = f'<img src="{poster_url}" style="width:40px;height:58px;object-fit:cover;border-radius:3px;">'
-                        else:
-                            plat_color = PLATFORMS.get(str(plat), {}).get("color", "#555")
-                            initial = str(row.get("title", "?"))[0].upper()
-                            poster_html = (
-                                f'<div style="width:40px;height:58px;background:{plat_color};'
-                                f'border-radius:3px;display:flex;align-items:center;justify-content:center;'
-                                f'font-size:1.1em;font-weight:700;color:#fff;">{initial}</div>'
-                            )
-                        st.markdown(
-                            f'<div style="display:flex;gap:8px;align-items:center;'
-                            f'padding:6px 0;border-bottom:1px solid {CARD_BORDER};">'
-                            f'{poster_html}'
-                            f'<div style="flex:1;min-width:0;">'
-                            f'<div style="font-weight:600;color:{CARD_TEXT};font-size:0.88em;'
-                            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
-                            f'{row.get("title","?")} ({year_str})</div>'
-                            f'<div style="display:flex;gap:6px;align-items:center;margin-top:2px;">'
-                            f'{badge_html}'
-                            f'<span style="color:{CARD_TEXT_MUTED};font-size:0.78em;">⭐ {imdb_str}</span>'
-                            f'</div></div></div>',
-                            unsafe_allow_html=True,
-                        )
-                except Exception as e:
-                    st.info(f"Similarity computation unavailable: {e}")
-            else:
+        with col_r1b:
+            if content_type == "Movie":
                 st.markdown(
-                    f'<div style="color:{CARD_TEXT_MUTED};font-size:0.88em;text-align:center;'
-                    f'padding:20px 0;">Enter a description to see similar titles.</div>',
+                    section_header_html(
+                        "Box Office Projection",
+                        "Heuristic estimate from historic budget → box office ratios.",
+                    ),
                     unsafe_allow_html=True,
                 )
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        # ── Row 2: Platform Fit | Talent Recommendations ──────────────────────
-        col_c3, col_c4 = st.columns(2)
-
-        with col_c3:
-            st.markdown(
-                section_header_html("Platform Fit", "How well does this concept align with each platform's catalog?"),
-                unsafe_allow_html=True,
-            )
-            if genres_sel:
-                fit_scores = {}
-                plat_data = {}
-                all_df = enriched.copy()
-                for plat in ALL_PLATFORMS:
-                    plat_df = all_df[all_df["platform"] == plat] if "platform" in all_df.columns else pd.DataFrame()
-                    if plat_df.empty:
-                        fit_scores[plat] = 0
-                        continue
-                    # Genre alignment: % of platform titles in selected genres
-                    def has_genre(gl):
-                        if isinstance(gl, (list, np.ndarray)):
-                            return any(g in gl for g in genres_sel)
-                        return False
-                    genre_align = plat_df["genres"].apply(has_genre).mean() * 100
-
-                    # Quality alignment: +20 bonus if pred within 0.5 of platform avg
-                    plat_avg_imdb = pd.to_numeric(plat_df["imdb_score"], errors="coerce").mean()
-                    quality_bonus = 20 if abs(pred - plat_avg_imdb) <= 0.5 else 0
-
-                    # Award density bonus for movies
-                    award_bonus = 0
-                    if content_type == "Movie" and "award_wins" in plat_df.columns:
-                        genre_plat = plat_df[plat_df["genres"].apply(has_genre)]
-                        if len(genre_plat) > 0:
-                            plat_award_density = genre_plat["award_wins"].fillna(0).mean()
-                            all_award_density = all_df["award_wins"].fillna(0).mean() if "award_wins" in all_df.columns else 0
-                            if plat_award_density > all_award_density:
-                                award_bonus = 10
-
-                    score = min(100, round(genre_align * 0.6 + quality_bonus + award_bonus))
-                    fit_scores[plat] = score
-                    plat_data[plat] = {
-                        "genre_align": genre_align,
-                        "avg_imdb": plat_avg_imdb,
-                        "score": score,
-                        "title_count": len(plat_df),
-                    }
-
-                if fit_scores:
-                    plat_names = [PLATFORMS.get(p, {}).get("name", p) for p in ALL_PLATFORMS]
-                    plat_colors = [PLATFORMS.get(p, {}).get("color", "#555") for p in ALL_PLATFORMS]
-                    plat_vals = [fit_scores[p] for p in ALL_PLATFORMS]
-
-                    fig_fit = go.Figure(go.Bar(
-                        x=plat_vals,
-                        y=plat_names,
-                        orientation="h",
-                        marker_color=plat_colors,
-                        text=[f"{v}" for v in plat_vals],
-                        textposition="auto",
-                    ))
-                    fig_fit.update_layout(
-                        template=PLOTLY_TEMPLATE,
-                        height=250,
-                        margin=dict(l=0, r=10, t=10, b=10),
-                        xaxis_title="Fit Score (0–100)",
-                        yaxis_title="",
-                    )
-                    st.plotly_chart(fig_fit, use_container_width=True)
-
-                    best_plat = max(fit_scores, key=fit_scores.get)
-                    bd = plat_data.get(best_plat, {})
-                    genre_list_str = " & ".join(genres_sel[:2])
-                    avg_imdb_str = f"{bd.get('avg_imdb', 0):.2f}" if pd.notna(bd.get("avg_imdb")) else "N/A"
-                    genre_pct = bd.get("genre_align", 0)
-                    st.markdown(
-                        f'<div style="background:rgba(0,180,166,0.1);border:1px solid {CARD_ACCENT};'
-                        f'border-radius:6px;padding:10px 12px;margin-top:8px;">'
-                        f'<span style="color:{CARD_ACCENT};font-weight:700;">Best Home: '
-                        f'{PLATFORMS.get(best_plat, {}).get("name", best_plat)}</span> '
-                        f'<span style="color:{CARD_TEXT};font-size:0.88em;">— {genre_pct:.0f}% of its catalog is '
-                        f'{genre_list_str} with avg IMDb {avg_imdb_str}, matching this concept\'s profile.</span>'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
-            else:
-                st.info("Select genres to see platform fit.")
-
-        with col_c4:
-            st.markdown(
-                section_header_html("Talent Recommendations", "Top directors and actors for your selected genres."),
-                unsafe_allow_html=True,
-            )
-            person_stats = load_person_stats()
-            if person_stats.empty or not genres_sel:
-                st.info("Select genres to see talent recommendations." if not genres_sel else "Person stats data unavailable.")
-            else:
-                try:
-                    filtered = person_stats[
-                        person_stats["top_genre"].isin(genres_sel)
-                        & (person_stats["title_count"] >= 2)
-                    ].copy()
-                    filtered = filtered.sort_values("avg_imdb", ascending=False)
-
-                    directors = filtered[filtered["primary_role"].str.lower() == "director"].head(5)
-                    actors = filtered[filtered["primary_role"].str.lower() == "actor"].head(5)
-
-                    tcol_d, tcol_a = st.columns(2)
-
-                    def _render_person_list(df_persons, col):
-                        with col:
-                            for _, p in df_persons.iterrows():
-                                imdb_c = "#2ecc71" if p["avg_imdb"] >= 7.5 else (CARD_ACCENT if p["avg_imdb"] >= 7.0 else CARD_TEXT_MUTED)
-                                plats = p.get("platform_list", [])
-                                plat_str = ", ".join(plats[:2]) if isinstance(plats, list) else str(plats)[:20]
-                                st.markdown(
-                                    f'<div style="padding:5px 0;border-bottom:1px solid {CARD_BORDER};">'
-                                    f'<span style="font-weight:600;color:{CARD_TEXT};font-size:0.88em;">{p["name"]}</span>'
-                                    f'<span style="margin-left:6px;background:{imdb_c}22;color:{imdb_c};'
-                                    f'padding:1px 6px;border-radius:8px;font-size:0.75em;'
-                                    f'border:1px solid {imdb_c};">⭐ {p["avg_imdb"]:.1f}</span>'
-                                    f'<div style="color:{CARD_TEXT_MUTED};font-size:0.75em;">'
-                                    f'{int(p["title_count"])} titles · {plat_str}</div>'
-                                    f'</div>',
-                                    unsafe_allow_html=True,
-                                )
-
-                    st.markdown(f'<div style="color:{CARD_TEXT_MUTED};font-size:0.78em;font-weight:600;text-transform:uppercase;margin-bottom:4px;">Directors</div>', unsafe_allow_html=True)
-                    if directors.empty:
-                        st.caption("No directors found for selected genres.")
-                    else:
-                        _render_person_list(directors, tcol_d)
-
-                    st.markdown(f'<div style="color:{CARD_TEXT_MUTED};font-size:0.78em;font-weight:600;text-transform:uppercase;margin-top:8px;margin-bottom:4px;">Actors</div>', unsafe_allow_html=True)
-                    if actors.empty:
-                        st.caption("No actors found for selected genres.")
-                    else:
-                        _render_person_list(actors, tcol_a)
-
-                except Exception as e:
-                    st.info(f"Talent data unavailable: {e}")
-
-        # ── Row 3: Catalog Gap Signal ─────────────────────────────────────────
-        st.markdown(
-            section_header_html("Catalog Gap Signal", "Does your concept address a strategic gap in the merged catalog?"),
-            unsafe_allow_html=True,
-        )
-        aq_df = _get_acquisition_targets()
-        if aq_df.empty:
-            st.info("Acquisition targets data not available. Run `scripts/11_precompute_strategic.py`.")
-        elif not genres_sel:
-            st.info("Select genres to see catalog gap analysis.")
-        else:
-            matched_any = False
-            for genre in genres_sel:
-                genre_gaps = aq_df[aq_df["genre"].str.lower() == genre.lower()] if "genre" in aq_df.columns else pd.DataFrame()
-                if genre_gaps.empty:
-                    continue
-                matched_any = True
-                worst_gap = genre_gaps.sort_values("severity", key=lambda s: s.map({"High": 0, "Medium": 1, "Low": 2})).iloc[0]
-                severity = worst_gap.get("severity", "Medium")
-                merged_share = worst_gap.get("merged_share", 0)
-                merged_pct = f"{merged_share * 100:.1f}%"
-
-                if severity == "High":
-                    alert_color, alert_bg, icon = "#e74c3c", "rgba(231,76,60,0.1)", "⚠️"
-                elif severity == "Medium":
-                    alert_color, alert_bg, icon = "#f39c12", "rgba(243,156,18,0.1)", "🔶"
+                genre_medians, global_median, genre_counts = _box_office_stats(enriched)
+                if genres_sel:
+                    ratios = [genre_medians.get(g, global_median) for g in genres_sel]
+                    genre_mult = float(np.mean(ratios)) if ratios else global_median
+                    n_comparables = sum(genre_counts.get(g, 0) for g in genres_sel)
                 else:
-                    alert_color, alert_bg, icon = "#2ecc71", "rgba(46,204,113,0.1)", "✅"
+                    genre_mult = global_median
+                    n_comparables = sum(genre_counts.values())
+
+                if   pred >= 7.5: quality_mult = 1.40
+                elif pred >= 7.0: quality_mult = 1.15
+                elif pred <= 5.5: quality_mult = 0.70
+                else:             quality_mult = 1.00
+
+                cert_current = st.session_state.get("gs_cert_movie", "PG-13")
+                if   cert_current == "G/PG":     cert_mult = 1.10
+                elif cert_current == "R/NC-17":  cert_mult = 0.75
+                else:                            cert_mult = 1.00
+
+                projected = budget_m * 1e6 * genre_mult * quality_mult * cert_mult
+                low = projected * 0.6
+                high = projected * 1.4
+
+                def _fmt_money(v):
+                    if v >= 1e9:
+                        return f"${v/1e9:.2f}B"
+                    if v >= 1e6:
+                        return f"${v/1e6:.0f}M"
+                    return f"${v:,.0f}"
 
                 st.markdown(
-                    f'<div style="background:{alert_bg};border:1px solid {alert_color};'
-                    f'border-left:4px solid {alert_color};border-radius:6px;padding:10px 14px;margin-bottom:8px;">'
-                    f'<span style="color:{alert_color};font-weight:700;">{icon} {severity} Priority Gap — '
-                    f'{genre.title()}</span> '
-                    f'<span style="color:{CARD_TEXT};font-size:0.88em;">is underrepresented at {merged_pct} '
-                    f'of the merged catalog. This concept directly addresses an acquisition gap.</span>'
+                    f"""
+                    <div style="background:{CARD_BG};border:1px solid {CARD_BORDER};
+                                border-top:3px solid {CARD_ACCENT};border-radius:8px;padding:16px;">
+                      <div style="color:{CARD_TEXT_MUTED};font-size:0.78em;">Projected worldwide gross</div>
+                      <div style="font-size:2.6em;font-weight:800;color:{CARD_ACCENT};line-height:1.1;">
+                        {_fmt_money(projected)}
+                      </div>
+                      <div style="color:{CARD_TEXT};font-size:0.85em;margin-top:4px;">
+                        Range: <b>{_fmt_money(low)}</b> – <b>{_fmt_money(high)}</b>
+                      </div>
+                      <div style="color:{CARD_TEXT_MUTED};font-size:0.75em;margin-top:6px;">
+                        Budget ${budget_m}M × genre ratio {genre_mult:.1f}× × quality {quality_mult:.2f}× × cert {cert_mult:.2f}×
+                      </div>
+                      <div style="color:{CARD_TEXT_MUTED};font-size:0.72em;margin-top:4px;">
+                        Based on {n_comparables} comparable movies with budget+box-office data.
+                      </div>
+                      <div style="color:{CARD_TEXT_MUTED};font-size:0.7em;margin-top:8px;font-style:italic;">
+                        Heuristic estimate — not a full financial model.
+                      </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    section_header_html(
+                        "Show Economics",
+                        "Box office projection is movie-only. Series ROI is driven by episode count and subscriber retention.",
+                    ),
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    f'<div style="background:{CARD_BG};border:1px solid {CARD_BORDER};'
+                    f'border-radius:8px;padding:16px;color:{CARD_TEXT_MUTED};font-size:0.88em;">'
+                    f'No theatrical revenue model applies to streaming shows. Compare against the '
+                    f'Similar Titles panel below for benchmark performance.'
                     f'</div>',
                     unsafe_allow_html=True,
                 )
 
-            if not matched_any:
-                # Neutral insight
-                enriched = _get_enriched()
-                for genre in genres_sel[:1]:
-                    genre_mask = enriched["genres"].apply(
+        # ── Row 2: Most Similar Titles (full width) ──────────────────────────
+        st.markdown(
+            section_header_html(
+                "Most Similar Titles",
+                "Titles closest to your concept by vibe, genre, and quality.",
+            ),
+            unsafe_allow_html=True,
+        )
+
+        if not desc_text:
+            st.markdown(
+                f'<div style="background:{CARD_BG};border:1px solid {CARD_BORDER};'
+                f'border-radius:8px;padding:20px;text-align:center;color:{CARD_TEXT_MUTED};'
+                f'font-size:0.9em;">Enter a concept description to see similar titles.</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            try:
+                gv, gmap = load_genome_vectors()
+                results_v, _signals = vibe_search(
+                    desc_text, enriched,
+                    genome_vectors=gv, genome_id_map=gmap, enriched_df=enriched,
+                    top_k=20, min_imdb=None, year_range=None, min_votes=0,
+                )
+                if results_v is None or results_v.empty:
+                    st.info("No similar titles found for this concept.")
+                else:
+                    rated = results_v[results_v["imdb_score"].notna()].head(5)
+                    if len(rated) < 5:
+                        unrated = results_v[results_v["imdb_score"].isna()].head(5 - len(rated))
+                        rated = pd.concat([rated, unrated], ignore_index=False)
+                    top_rows = rated.head(5)
+
+                    grid_cols = st.columns(5)
+                    for gi, (_, trow) in enumerate(top_rows.iterrows()):
+                        badge_score = min(1.0, float(trow.get("vibe_score", 0)) / 0.40)
+                        with grid_cols[gi]:
+                            _gs_render_similar_card(trow.to_dict(), badge_score)
+            except Exception as e:
+                st.info(f"Similarity search unavailable: {e}")
+
+        # ── Row 3: Platform Fit | Catalog Gap Signal ─────────────────────────
+        col_r3a, col_r3b = st.columns(2)
+
+        with col_r3a:
+            st.markdown(
+                section_header_html(
+                    "Platform Fit",
+                    "How well does this concept align with each platform's catalog?",
+                ),
+                unsafe_allow_html=True,
+            )
+            profiles = _platform_profiles(enriched)
+
+            if not genres_sel:
+                st.info("Select at least one genre to compute Platform Fit.")
+            else:
+                fit_scores = {}
+                min_overlap = 2 if len(genres_sel) >= 2 else 1
+                for plat in ALL_PLATFORMS:
+                    sub = enriched[enriched["platform"] == plat] if "platform" in enriched.columns else enriched.iloc[0:0]
+                    if len(sub) == 0:
+                        fit_scores[plat] = 0
+                        continue
+
+                    g_component = sub["genres"].apply(
+                        lambda gl: isinstance(gl, (list, np.ndarray))
+                        and len(set(gl) & set(genres_sel)) >= min_overlap
+                    ).mean() * 100
+
+                    delta = abs(pred - profiles[plat]["median_imdb"])
+                    q_component = max(0.0, 1 - max(0.0, delta - 0.5) / 1.5) * 100
+
+                    mr = profiles[plat]["movie_ratio"]
+                    if content_type == "Movie":
+                        t_component = min(mr / 0.7, 1.0) * 100
+                    else:
+                        t_component = min((1 - mr) / 0.7, 1.0) * 100
+
+                    fit = round(0.40 * g_component + 0.30 * q_component + 0.30 * t_component)
+                    fit_scores[plat] = max(0, min(100, fit))
+
+                sorted_plats = sorted(fit_scores.keys(), key=lambda p: fit_scores[p], reverse=True)
+                plat_names = [PLATFORMS.get(p, {}).get("name", p) for p in sorted_plats]
+                plat_colors = [PLATFORMS.get(p, {}).get("color", "#555") for p in sorted_plats]
+                plat_vals = [fit_scores[p] for p in sorted_plats]
+
+                # Top bar gets a star annotation
+                y_labels = list(plat_names)
+                if y_labels:
+                    y_labels[0] = f"⭐ {y_labels[0]}"
+
+                fig_fit = go.Figure(go.Bar(
+                    x=plat_vals,
+                    y=y_labels,
+                    orientation="h",
+                    marker_color=plat_colors,
+                    text=[f"{v}" for v in plat_vals],
+                    textposition="outside",
+                    cliponaxis=False,
+                ))
+                fig_fit.update_layout(
+                    template=PLOTLY_TEMPLATE,
+                    height=260,
+                    margin=dict(l=0, r=30, t=10, b=10),
+                    xaxis=dict(title="Fit Score (0–100)", range=[0, 110]),
+                    yaxis=dict(title="", autorange="reversed"),
+                )
+                st.plotly_chart(fig_fit, use_container_width=True)
+
+                top_plat_name = PLATFORMS.get(sorted_plats[0], {}).get("name", sorted_plats[0])
+                st.markdown(
+                    f'<div style="color:{CARD_TEXT};font-size:0.88em;padding:6px 2px;">'
+                    f'Based on catalog composition, <b style="color:{CARD_ACCENT};">{top_plat_name}</b> '
+                    f'is the strongest strategic home for this concept.'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+        with col_r3b:
+            st.markdown(
+                section_header_html(
+                    "Catalog Gap Signal",
+                    "How saturated is the merged catalog in your selected genres?",
+                ),
+                unsafe_allow_html=True,
+            )
+            if not genres_sel:
+                st.info("Select genres to see catalog gap analysis.")
+            else:
+                merged_df = enriched[enriched["platform"].isin(MERGED_PLATFORMS)] if "platform" in enriched.columns else enriched.iloc[0:0]
+                merged_total = max(len(merged_df), 1)
+                for genre in genres_sel:
+                    share = merged_df["genres"].apply(
                         lambda g: isinstance(g, (list, np.ndarray)) and genre in g
-                    )
-                    genre_count = genre_mask.sum()
-                    total = len(enriched)
-                    genre_pct = genre_count / total * 100 if total > 0 else 0
-                    genre_imdb = pd.to_numeric(enriched.loc[genre_mask, "imdb_score"], errors="coerce").mean()
-                    imdb_str = f"{genre_imdb:.2f}" if pd.notna(genre_imdb) else "N/A"
+                    ).mean() if len(merged_df) else 0.0
+                    share_pct = share * 100
+
+                    if share < 0.15:
+                        label, color, bg = "High Priority Gap", "#2ecc71", "rgba(46,204,113,0.10)"
+                        detail = "This concept addresses a real acquisition need in the merged catalog."
+                    elif share < 0.30:
+                        label, color, bg = "Moderate Gap", "#f39c12", "rgba(243,156,18,0.10)"
+                        detail = "The genre has room for differentiation."
+                    else:
+                        label, color, bg = "Saturated Category", "#e67e22", "rgba(230,126,34,0.10)"
+                        detail = "Well-represented — your concept will need strong differentiation to stand out."
+
                     st.markdown(
-                        f'<div style="background:rgba(0,0,0,0.2);border:1px solid {CARD_BORDER};'
-                        f'border-radius:6px;padding:10px 14px;">'
-                        f'<span style="color:{CARD_TEXT};">This concept enters a well-served space — '
-                        f'<b>{genre.title()}</b> represents {genre_pct:.1f}% of the merged catalog '
-                        f'with avg IMDb of {imdb_str}.</span>'
+                        f'<div style="background:{bg};border:1px solid {color};'
+                        f'border-left:4px solid {color};border-radius:6px;'
+                        f'padding:10px 14px;margin-bottom:8px;">'
+                        f'<div style="color:{color};font-weight:700;font-size:0.95em;">'
+                        f'{label} — {genre.title()}</div>'
+                        f'<div style="color:{CARD_TEXT};font-size:0.85em;margin-top:2px;">'
+                        f'{genre.title()} represents <b>{share_pct:.1f}%</b> of the merged catalog. {detail}'
+                        f'</div>'
                         f'</div>',
                         unsafe_allow_html=True,
                     )
 
-        # ── Model Card expander ───────────────────────────────────────────────
+        # ── Row 4: Directors | Cast ──────────────────────────────────────────
+        st.markdown(
+            section_header_html(
+                "Talent Recommendations",
+                "Directors and cast whose catalog work most closely fits your concept.",
+            ),
+            unsafe_allow_html=True,
+        )
+
+        principals = load_imdb_principals()
+        if principals.empty:
+            st.info("Principals data unavailable — run `scripts/06_fetch_imdb_principals.py`.")
+        elif not genres_sel:
+            st.info("Select genres to see talent recommendations.")
+        else:
+            try:
+                vec_gs, mat_gs, id_list_gs, enriched_with_desc = _load_catalog_tfidf_matrix()
+
+                def _score_persons(role_filter, min_titles, min_imdb_floor):
+                    pr = principals[principals["category"].str.lower().isin(role_filter)]
+                    if pr.empty:
+                        return []
+                    needed_cols = [c for c in
+                                   ["imdb_id", "id", "genres", "imdb_score", "platform", "poster_url", "title"]
+                                   if c in enriched_with_desc.columns]
+                    m = pr.merge(enriched_with_desc[needed_cols], on="imdb_id", how="inner")
+                    if m.empty:
+                        return []
+                    m = m[m["genres"].apply(
+                        lambda g: isinstance(g, (list, np.ndarray)) and bool(set(g) & set(genres_sel))
+                    )]
+                    if m.empty:
+                        return []
+
+                    if desc_text:
+                        q_vec = vec_gs.transform([desc_text])
+                        id_to_row = {tid: i for i, tid in enumerate(id_list_gs)}
+                        m = m.assign(_row=m["id"].map(id_to_row))
+                        m = m[m["_row"].notna()].copy()
+                        if not m.empty:
+                            sims = cosine_similarity(q_vec, mat_gs[m["_row"].astype(int).values]).flatten()
+                            m["_sim"] = sims
+                        else:
+                            return []
+                    else:
+                        m["_sim"] = 0.0
+
+                    grouped = m.groupby("person_id").agg(
+                        name=("name", "first"),
+                        avg_imdb=("imdb_score", "mean"),
+                        title_count=("title", "count"),
+                        vibe=("_sim", "mean"),
+                        titles=("title", lambda s: list(dict.fromkeys(s))[:2]),
+                        platforms=("platform", lambda s: list(dict.fromkeys(s))[:3]),
+                    ).reset_index()
+
+                    grouped = grouped[
+                        (grouped["title_count"] >= min_titles)
+                        & (grouped["avg_imdb"] >= min_imdb_floor)
+                    ]
+                    if grouped.empty:
+                        return []
+
+                    grouped["_qnorm"] = ((grouped["avg_imdb"] - 5.0) / 5.0).clip(0, 1)
+                    grouped["rank_score"] = 0.6 * grouped["vibe"] + 0.4 * grouped["_qnorm"]
+                    grouped = grouped.sort_values("rank_score", ascending=False)
+
+                    seen, out = set(), []
+                    for _, r in grouped.iterrows():
+                        pid = r["person_id"]
+                        if pid in seen:
+                            continue
+                        seen.add(pid)
+                        out.append(r.to_dict())
+                        if len(out) >= 5:
+                            break
+                    return out
+
+                directors = _score_persons({"director"}, min_titles=2, min_imdb_floor=6.5)
+                cast = _score_persons({"actor", "actress"}, min_titles=2, min_imdb_floor=6.0)
+
+                def _render_person_card(p):
+                    name = p.get("name", "?")
+                    avg_i = p.get("avg_imdb", 0)
+                    vibe = p.get("vibe", 0)
+                    titles_list = p.get("titles", []) or []
+                    plats_list = p.get("platforms", []) or []
+                    imdb_c = "#2ecc71" if avg_i >= 7.5 else (CARD_ACCENT if avg_i >= 7.0 else CARD_TEXT_MUTED)
+                    title_pills = " ".join(
+                        f'<span style="background:#2a2a3e;color:{CARD_TEXT_MUTED};'
+                        f'padding:1px 6px;border-radius:8px;font-size:0.7em;margin-right:3px;">{t}</span>'
+                        for t in titles_list if t
+                    )
+                    plat_badges = platform_badges_html(plats_list) if plats_list else ""
+                    vibe_badge = ""
+                    if desc_text and vibe > 0:
+                        vp = int(round(min(1.0, vibe / 0.40) * 100))
+                        vibe_badge = (
+                            f'<span style="background:rgba(0,180,166,0.15);color:{CARD_ACCENT};'
+                            f'padding:1px 6px;border-radius:8px;font-size:0.72em;'
+                            f'border:1px solid {CARD_ACCENT};margin-left:6px;">Match {vp}%</span>'
+                        )
+                    st.markdown(
+                        f'<div style="background:{CARD_BG};border:1px solid {CARD_BORDER};'
+                        f'border-radius:6px;padding:10px 12px;margin-bottom:6px;">'
+                        f'<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">'
+                        f'<div><span style="font-weight:700;color:{CARD_TEXT};font-size:0.92em;">{name}</span>'
+                        f'<span style="margin-left:6px;background:{imdb_c}22;color:{imdb_c};'
+                        f'padding:1px 7px;border-radius:8px;font-size:0.72em;'
+                        f'border:1px solid {imdb_c};">IMDb {avg_i:.1f}</span>'
+                        f'{vibe_badge}</div>'
+                        f'</div>'
+                        f'<div style="margin-top:4px;">{title_pills}</div>'
+                        f'<div style="margin-top:4px;">{plat_badges}</div>'
+                        f'</div>',
+                        unsafe_allow_html=True,
+                    )
+
+                tcol_d, tcol_a = st.columns(2)
+                with tcol_d:
+                    st.markdown(
+                        f'<div style="color:{CARD_TEXT_MUTED};font-size:0.78em;font-weight:600;'
+                        f'text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Directors</div>',
+                        unsafe_allow_html=True,
+                    )
+                    if not directors:
+                        st.caption("No directors matching this concept — recommendations are catalog-derived.")
+                    else:
+                        for p in directors:
+                            _render_person_card(p)
+                with tcol_a:
+                    st.markdown(
+                        f'<div style="color:{CARD_TEXT_MUTED};font-size:0.78em;font-weight:600;'
+                        f'text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Cast</div>',
+                        unsafe_allow_html=True,
+                    )
+                    if not cast:
+                        st.caption("No cast matching this concept — recommendations are catalog-derived.")
+                    else:
+                        for p in cast:
+                            _render_person_card(p)
+
+            except Exception as e:
+                st.info(f"Talent data unavailable: {e}")
+
+        # ── Row 5: Model Card expander ───────────────────────────────────────
         with st.expander("Model Card", expanded=False):
             model = load_greenlight_model("movie" if content_type == "Movie" else "show")
             if model:
@@ -659,7 +893,6 @@ with tab1:
                 base_str = f"{base_r:.3f}" if base_r is not None else "N/A"
                 impr_str = f"{(1 - cv_r/base_r)*100:.1f}%" if (cv_r and base_r and base_r > 0) else "N/A"
 
-                # Clean feature names
                 def _clean(f):
                     if f.startswith("genre_"):
                         return f.replace("genre_", "").title() + " (genre)"
@@ -687,6 +920,8 @@ with tab1:
 **Limitations:** Trained on catalog metadata only. Does not account for marketing,
 star power, cultural timing, or release strategy.
 Predictions are directional estimates, not precise forecasts.
+
+**Data snapshot:** June 2025 catalog (pre-merger). Hypothetical merger for academic analysis.
 """)
 
 
@@ -795,8 +1030,8 @@ with tab2:
                             f'<div style="display:flex;align-items:center;gap:8px;margin-top:4px;">'
                             f'<span style="color:{CARD_TEXT_MUTED};font-size:0.82em;">📽 {tc} titles</span>'
                             f'<span style="background:{imdb_color}22;color:{imdb_color};padding:1px 7px;'
-                            f'border-radius:8px;font-size:0.78em;border:1px solid {imdb_color};">⭐ {imdb_str}</span>'
-                            + (f'<span style="color:{CARD_TEXT_MUTED};font-size:0.78em;">🏆 {int(awards)}</span>' if awards > 0 else "")
+                            f'border-radius:8px;font-size:0.78em;border:1px solid {imdb_color};">IMDb {imdb_str}</span>'
+                            + (f'<span style="color:{CARD_TEXT_MUTED};font-size:0.78em;">{int(awards)} awards</span>' if awards > 0 else "")
                             + f'</div>'
                             f'{bar_html}'
                             f'<div style="color:{CARD_TEXT_MUTED};font-size:0.75em;margin-top:2px;">Latest: {ly or "N/A"}</div>'
@@ -841,7 +1076,7 @@ with tab2:
                         plat_color = PLATFORMS.get(str(plat), {}).get("color", "#555")
                         initial = str(tr.get("title", "?"))[0].upper()
                         year_s = str(int(tr["release_year"])) if pd.notna(tr.get("release_year")) else ""
-                        imdb_s = f"⭐ {tr['imdb_score']:.1f}" if pd.notna(tr.get("imdb_score")) else ""
+                        imdb_s = f"IMDb {tr['imdb_score']:.1f}" if pd.notna(tr.get("imdb_score")) else ""
                         if pd.notna(poster_url) and str(poster_url).startswith("http"):
                             img_html = f'<img src="{poster_url}" style="width:120px;height:170px;object-fit:cover;border-radius:4px;">'
                         else:
@@ -950,7 +1185,7 @@ with tab2:
                         st.markdown(
                             f'<div style="background:rgba(0,180,166,0.1);border:1px solid {CARD_ACCENT};'
                             f'border-radius:6px;padding:8px 12px;margin-top:8px;">'
-                            f'<span style="color:{CARD_ACCENT};">💡 </span>'
+                            f''
                             f'<span style="color:{CARD_TEXT};font-size:0.88em;">{insight_text}</span>'
                             f'</div>',
                             unsafe_allow_html=True,
@@ -1117,7 +1352,7 @@ with tab3:
     def _pick_card_html(pick_dict):
         title = pick_dict.get("title", "?")
         imdb = pick_dict.get("imdb_score", "")
-        imdb_str = f"⭐ {float(imdb):.1f}" if pd.notna(imdb) and imdb != "" else ""
+        imdb_str = f"IMDb {float(imdb):.1f}" if pd.notna(imdb) and imdb != "" else ""
         return f"**{title}** {imdb_str}"
 
     # ── Setup Panel ───────────────────────────────────────────────────────────
@@ -1153,7 +1388,7 @@ with tab3:
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-        if st.button("🏆 Start Draft", type="primary", use_container_width=True):
+        if st.button("Start Draft", type="primary", use_container_width=True):
             # Build pool
             pool = _get_enriched().copy()
             pool = pool[pd.to_numeric(pool.get("imdb_votes", pd.Series(0, index=pool.index)), errors="coerce").fillna(0) > 5000].copy()
@@ -1243,7 +1478,7 @@ with tab3:
             for idx, row in display_pool.iterrows():
                 col_info, col_btn = st.columns([4, 1])
                 with col_info:
-                    imdb_s = f"⭐ {row['imdb_score']:.1f}" if pd.notna(row.get("imdb_score")) else ""
+                    imdb_s = f"IMDb {row['imdb_score']:.1f}" if pd.notna(row.get("imdb_score")) else ""
                     year_s = str(int(row["release_year"])) if pd.notna(row.get("release_year")) else ""
                     plat = str(row.get("platform", ""))
                     badge = platform_badges_html(plat) if plat else ""
@@ -1431,7 +1666,7 @@ with tab3:
                     plat_color = PLATFORMS.get(plat, {}).get("color", "#555")
                     initial = str(p.get("title", "?"))[0].upper()
                     year_s = str(int(p["release_year"])) if pd.notna(p.get("release_year")) else ""
-                    imdb_s = f"⭐ {p['imdb_f']:.1f}" if p["imdb_f"] > 0 else ""
+                    imdb_s = f"IMDb {p['imdb_f']:.1f}" if p["imdb_f"] > 0 else ""
                     badge = platform_badges_html(plat) if plat else ""
                     if pd.notna(poster_url) and str(poster_url).startswith("http"):
                         poster_h = f'<img src="{poster_url}" style="width:60px;height:88px;object-fit:cover;border-radius:4px;">'
@@ -1490,11 +1725,11 @@ with tab3:
 # =============================================================================
 st.divider()
 st.markdown(
-    '<div style="border-top:1px solid #333;padding:16px 0;color:#666;'
-    'font-size:0.8em;text-align:center;">'
-    "Hypothetical merger for academic analysis only. Data is a snapshot (mid-2023). "
-    "Netflix withdrew from this acquisition (Feb 26, 2026). "
-    "All insights are illustrative, not prescriptive."
-    "</div>",
+    '<div style="color:#555;font-size:0.8em;text-align:center;padding:8px 0 16px;">'
+    'Hypothetical merger for academic analysis. '
+    'Data is a snapshot (mid-2023). '
+    'All insights are illustrative, not prescriptive. '
+    'As of Feb 26, 2026, Netflix withdrew from this acquisition.'
+    '</div>',
     unsafe_allow_html=True,
 )

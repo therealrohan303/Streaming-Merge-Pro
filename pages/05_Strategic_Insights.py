@@ -100,7 +100,7 @@ def _rank_badge(rank_str):
         2: "rgba(192,192,192,0.10)",
         3: "rgba(205,127,50,0.10)",
     }.get(n, "rgba(136,136,136,0.08)")
-    trophy = "🏆 " if n == 1 else ""
+    trophy = ""
     return (
         f'<span style="background:{bg};color:{color};padding:1px 7px;'
         f'border-radius:8px;font-size:0.8em;font-weight:700;border:1px solid {color};">'
@@ -232,7 +232,7 @@ try:
         f"curation opportunity to consolidate and focus resources on underserved genres."
         f"{prestige_sentence}"
     )
-    st.markdown(styled_banner_html("📊", summary), unsafe_allow_html=True)
+    st.markdown(styled_banner_html("", summary), unsafe_allow_html=True)
 except Exception:
     pass
 
@@ -448,7 +448,7 @@ if prestige_path.exists():
     award_coverage = titles["award_wins"].notna().mean() if "award_wins" in titles.columns else 0
 
     if award_coverage >= WIKIDATA_MIN_COVERAGE:
-        st.markdown(styled_banner_html("ℹ️", f"Prestige Index (Wikidata, {award_coverage:.0%} coverage)"), unsafe_allow_html=True)
+        st.markdown(styled_banner_html("", f"Prestige Index (Wikidata, {award_coverage:.0%} coverage)"), unsafe_allow_html=True)
 
         platform_prestige = (
             prestige.groupby("platform")
@@ -499,7 +499,7 @@ if prestige_path.exists():
                 f"{'more than' if merged_wins > combined else 'comparable to'} Disney+ and Prime Video combined (<b>{int(combined):,}</b>)."
             )
             bullets = f"<ul style='margin:4px 0;padding-left:18px;'><li style='margin-bottom:5px;'>{b1}</li><li style='margin-bottom:5px;'>{b2}</li><li>{b3}</li></ul>"
-            st.markdown(styled_banner_html("💡", bullets), unsafe_allow_html=True)
+            st.markdown(styled_banner_html("", bullets), unsafe_allow_html=True)
         except Exception:
             pass
     else:
@@ -525,6 +525,8 @@ if "budget_usd" in titles.columns and "box_office_usd" in titles.columns:
     ].copy()
     if len(roi_data) > 20:
         roi_data["roi_proxy"] = roi_data["box_office_usd"] / roi_data["budget_usd"]
+
+        # ── Per-platform aggregates ────────────────────────────────────────
         platform_roi = (
             roi_data.groupby("platform")["roi_proxy"]
             .agg(["median", "count"])
@@ -535,7 +537,7 @@ if "budget_usd" in titles.columns and "box_office_usd" in titles.columns:
             lambda p: PLATFORMS.get(p, {}).get("name", p)
         )
 
-        # Add Netflix+Max merged bar
+        # Add Netflix+Max merged row
         merged_roi_data = roi_data[roi_data["platform"].isin(["netflix", "max"])].copy()
         blended_roi_val = merged_roi_data["roi_proxy"].median() if len(merged_roi_data) > 0 else 0.0
         merged_row = pd.DataFrame([{
@@ -543,65 +545,235 @@ if "budget_usd" in titles.columns and "box_office_usd" in titles.columns:
             "median": blended_roi_val, "count": len(merged_roi_data),
         }])
         platform_roi_with_merged = pd.concat([platform_roi, merged_row], ignore_index=True).sort_values("median")
-        bar_colors = [PLATFORMS.get(p, {}).get("color", "#555") for p in platform_roi_with_merged["platform"]]
-
-        fig_roi = go.Figure(go.Bar(
-            y=platform_roi_with_merged["Platform"],
-            x=platform_roi_with_merged["median"],
-            orientation="h",
-            marker_color=bar_colors,
-            text=[f"{v:.2f}x" for v in platform_roi_with_merged["median"]],
-            textposition="outside",
-            cliponaxis=False,
-        ))
-        fig_roi.add_vline(x=1.0, line_dash="dot", line_color="#aaa",
-                          annotation_text="Break-even (1.0x)", annotation_position="top right",
-                          annotation_font_color="#aaa")
-
-        appletv_name = PLATFORMS.get("appletv", {}).get("name", "Apple TV+")
-        appletv_row = platform_roi_with_merged[platform_roi_with_merged["platform"] == "appletv"]
-        if not appletv_row.empty:
-            fig_roi.add_annotation(
-                y=appletv_name, x=appletv_row["median"].iloc[0],
-                text="Streaming-first — theatrical BO not primary metric",
-                showarrow=True, arrowhead=2, ax=120, ay=0,
-                font=dict(color=CARD_TEXT_MUTED, size=11), arrowcolor=CARD_TEXT_MUTED,
-            )
-
-        fig_roi.update_layout(
-            title="Median Box Office ROI by Platform",
-            xaxis_title="Median ROI (box office / budget)", yaxis_title="",
-            template=PLOTLY_TEMPLATE,
-            height=max(280, 55 * len(platform_roi_with_merged)),
-            margin=dict(r=160),
-        )
-        st.plotly_chart(fig_roi, use_container_width=True)
 
         total_roi_titles = len(roi_data)
         total_titles = len(titles)
+        pct_above_be = (roi_data["roi_proxy"] >= 1.0).mean()
+        top_plat_row = platform_roi_with_merged.loc[platform_roi_with_merged["median"].idxmax()]
+        top_plat_name = top_plat_row["Platform"]
+        top_plat_val = top_plat_row["median"]
+
+        # ── Summary metric cards ──────────────────────────────────────────
+        roi_c1, roi_c2, roi_c3, roi_c4 = st.columns(4)
+        with roi_c1:
+            st.markdown(
+                styled_metric_card_html(
+                    "Merged Blended ROI", f"{blended_roi_val:.2f}x",
+                    help_text="Median box office / budget across Netflix + Max titles with theatrical data",
+                    accent_color=_MERGED_COLOR,
+                ),
+                unsafe_allow_html=True,
+            )
+        with roi_c2:
+            st.markdown(
+                styled_metric_card_html(
+                    "Top Platform", f"{top_plat_name} ({top_plat_val:.2f}x)",
+                    help_text="Platform with highest median ROI in this dataset",
+                    accent_color=CARD_ACCENT,
+                ),
+                unsafe_allow_html=True,
+            )
+        with roi_c3:
+            st.markdown(
+                styled_metric_card_html(
+                    "% Above Break-even", f"{pct_above_be:.0%}",
+                    help_text="Share of theatrically-released titles that recouped their production budget",
+                    accent_color="#2ECC71",
+                ),
+                unsafe_allow_html=True,
+            )
+        with roi_c4:
+            st.markdown(
+                styled_metric_card_html(
+                    "Data Coverage", f"{total_roi_titles:,} titles",
+                    help_text=f"{total_roi_titles/max(total_titles,1):.0%} of catalog — titles with both budget and box office data",
+                    accent_color=CARD_TEXT_MUTED,
+                ),
+                unsafe_allow_html=True,
+            )
+
+        # ── Dual charts ──────────────────────────────────────────────────
+        chart_left, chart_right = st.columns([6, 4])
+
+        with chart_left:
+            # Color bars by ROI tier: red <1x, amber 1-2x, green ≥2x
+            def _roi_bar_color(v):
+                if v < 1.0:
+                    return "#E74C3C"
+                elif v < 2.0:
+                    return "#F39C12"
+                return "#2ECC71"
+
+            bar_colors_tier = [_roi_bar_color(v) for v in platform_roi_with_merged["median"]]
+            plat_colors_border = [PLATFORMS.get(p, {}).get("color", "#555") for p in platform_roi_with_merged["platform"]]
+
+            fig_roi = go.Figure()
+            fig_roi.add_trace(go.Bar(
+                y=platform_roi_with_merged["Platform"],
+                x=platform_roi_with_merged["median"],
+                orientation="h",
+                marker=dict(
+                    color=bar_colors_tier,
+                    line=dict(color=plat_colors_border, width=3),
+                ),
+                text=[f"{v:.2f}x  (n={int(c)})" for v, c in zip(
+                    platform_roi_with_merged["median"], platform_roi_with_merged["count"]
+                )],
+                textposition="outside",
+                cliponaxis=False,
+                hovertemplate="<b>%{y}</b><br>Median ROI: %{x:.2f}x<extra></extra>",
+            ))
+            fig_roi.add_vline(x=1.0, line_dash="dot", line_color="#aaa",
+                              annotation_text="Break-even (1.0x)", annotation_position="top right",
+                              annotation_font_color="#aaa")
+            fig_roi.add_vline(x=2.0, line_dash="dot", line_color="#2ECC71",
+                              annotation_text="2x", annotation_position="top right",
+                              annotation_font_color="#2ECC71")
+
+            appletv_name = PLATFORMS.get("appletv", {}).get("name", "Apple TV+")
+            appletv_row = platform_roi_with_merged[platform_roi_with_merged["platform"] == "appletv"]
+            if not appletv_row.empty:
+                fig_roi.add_annotation(
+                    y=appletv_name, x=appletv_row["median"].iloc[0],
+                    text="Streaming-first",
+                    showarrow=True, arrowhead=2, ax=80, ay=0,
+                    font=dict(color=CARD_TEXT_MUTED, size=10), arrowcolor=CARD_TEXT_MUTED,
+                )
+
+            fig_roi.update_layout(
+                title="Median Box Office ROI by Platform",
+                xaxis_title="Median ROI (box office ÷ budget)", yaxis_title="",
+                template=PLOTLY_TEMPLATE,
+                height=max(320, 52 * len(platform_roi_with_merged)),
+                margin=dict(r=180, t=50),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_roi, use_container_width=True)
+
+        with chart_right:
+            # % above break-even per platform
+            be_rows = []
+            for _, r in platform_roi_with_merged.iterrows():
+                p_key = r["platform"]
+                if p_key == "merged":
+                    p_data = roi_data[roi_data["platform"].isin(["netflix", "max"])]
+                else:
+                    p_data = roi_data[roi_data["platform"] == p_key]
+                if len(p_data) == 0:
+                    continue
+                pct_be = (p_data["roi_proxy"] >= 1.0).mean()
+                be_rows.append({"Platform": r["Platform"], "platform": p_key, "pct_be": pct_be})
+            be_df = pd.DataFrame(be_rows).sort_values("pct_be")
+
+            be_colors = [PLATFORMS.get(p, {}).get("color", "#555") for p in be_df["platform"]]
+            fig_be = go.Figure(go.Bar(
+                y=be_df["Platform"],
+                x=be_df["pct_be"] * 100,
+                orientation="h",
+                marker_color=be_colors,
+                text=[f"{v:.0%}" for v in be_df["pct_be"]],
+                textposition="outside",
+                cliponaxis=False,
+                hovertemplate="<b>%{y}</b><br>%{x:.1f}% above break-even<extra></extra>",
+            ))
+            fig_be.add_vline(x=50, line_dash="dot", line_color="#aaa",
+                             annotation_text="50%", annotation_position="top right",
+                             annotation_font_color="#aaa")
+            fig_be.update_layout(
+                title="% of Titles Above Break-even",
+                xaxis_title="% of titles with ROI ≥ 1.0x", yaxis_title="",
+                xaxis_range=[0, min(be_df["pct_be"].max() * 130, 100)],
+                template=PLOTLY_TEMPLATE,
+                height=max(320, 52 * len(be_df)),
+                margin=dict(r=70, t=50),
+                showlegend=False,
+            )
+            st.plotly_chart(fig_be, use_container_width=True)
+
+        # ── Top ROI Titles strip ──────────────────────────────────────────
+        st.markdown(
+            f'<div style="font-size:0.92em;font-weight:700;color:{CARD_TEXT};margin:8px 0 6px 0;">'
+            f'Top ROI Titles — Highest theatrical returns across all platforms</div>',
+            unsafe_allow_html=True,
+        )
+        top_roi_titles = (
+            roi_data
+            .sort_values("roi_proxy", ascending=False)
+            .drop_duplicates(subset=["title", "release_year"], keep="first")
+            .head(8)
+            [["title", "release_year", "platform", "budget_usd", "box_office_usd", "roi_proxy"]]
+            .copy()
+        )
+        _poster_map_roi = {}
+        if "poster_url" in titles.columns:
+            _poster_map_roi = titles.dropna(subset=["poster_url"]).set_index("title")["poster_url"].to_dict()
+
+        top_roi_html = (
+            f'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;">'
+        )
+        for _, tr in top_roi_titles.iterrows():
+            _p = tr.get("platform", "")
+            _pc = PLATFORMS.get(_p, {}).get("color", "#444")
+            _pn = PLATFORMS.get(_p, {}).get("name", _p)
+            _roi_v = tr["roi_proxy"]
+            _roi_color = "#2ECC71" if _roi_v >= 2.0 else "#F39C12" if _roi_v >= 1.0 else "#E74C3C"
+            _yr = int(tr["release_year"]) if pd.notna(tr.get("release_year")) else ""
+            _bud = tr.get("budget_usd", 0) or 0
+            _bo = tr.get("box_office_usd", 0) or 0
+            _bud_str = f"${_bud/1e6:.0f}M" if _bud >= 1e6 else f"${_bud/1e3:.0f}K"
+            _bo_str = f"${_bo/1e6:.0f}M" if _bo >= 1e6 else f"${_bo/1e3:.0f}K"
+            _init = (tr.get("title") or "?")[0].upper()
+            top_roi_html += (
+                f'<div style="background:{CARD_BG};border:1px solid {CARD_BORDER};border-radius:8px;'
+                f'padding:10px 14px;min-width:170px;max-width:220px;flex:1;">'
+                f'<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">'
+                f'<div style="width:32px;height:44px;background:{_pc};border-radius:4px;'
+                f'display:flex;align-items:center;justify-content:center;'
+                f'font-size:14px;font-weight:700;color:#fff;flex-shrink:0;">{_init}</div>'
+                f'<div>'
+                f'<div style="font-weight:700;font-size:0.85em;color:{CARD_TEXT};line-height:1.2;">'
+                f'{tr["title"]}</div>'
+                f'<div style="font-size:0.75em;color:{CARD_TEXT_MUTED};">{_yr}</div>'
+                f'</div></div>'
+                f'<div style="font-size:1.3em;font-weight:800;color:{_roi_color};margin-bottom:4px;">'
+                f'{_roi_v:.1f}x ROI</div>'
+                f'<div style="font-size:0.72em;color:{CARD_TEXT_MUTED};display:flex;gap:8px;">'
+                f'<span>Budget: {_bud_str}</span>'
+                f'<span>BO: {_bo_str}</span>'
+                f'</div>'
+                f'<div style="margin-top:5px;">'
+                f'<span style="background:rgba(0,0,0,0.25);color:{_pc};padding:1px 7px;'
+                f'border-radius:8px;font-size:0.72em;font-weight:600;">{_pn}</span>'
+                f'</div>'
+                f'</div>'
+            )
+        top_roi_html += '</div>'
+        st.markdown(top_roi_html, unsafe_allow_html=True)
+
+        # ── Insight banner ────────────────────────────────────────────────
         paramount_row = platform_roi_with_merged[platform_roi_with_merged["platform"] == "paramount"]
         paramount_roi_val = paramount_row["median"].iloc[0] if not paramount_row.empty else None
         paramount_sentence = (
-            f" Paramount+'s {paramount_roi_val:.2f}x median reflects its heavy reliance on "
-            f"theatrically-released CBS and Paramount Pictures catalog titles such as "
-            f"<i>Top Gun</i> and <i>Mission: Impossible</i> — a licensing advantage the merged "
-            f"entity could partially replicate through targeted theatrical catalog acquisition."
+            f" Paramount+'s <b>{paramount_roi_val:.2f}x</b> median reflects its heavy reliance on "
+            f"theatrically-released catalog titles — a licensing advantage the merged entity could "
+            f"partially replicate through targeted theatrical catalog acquisition."
             if paramount_roi_val else ""
         )
         st.markdown(
             styled_banner_html(
-                "📈",
+                "",
                 f"The merged Netflix+Max entity carries a blended ROI of <b>{blended_roi_val:.2f}x</b> "
-                f"across {total_roi_titles:,} theatrically-released titles — competitive with Disney+ "
-                f"but below Paramount+'s theatrical-driven library. The merger's ROI story lies in "
-                f"volume and awards prestige rather than box office returns.{paramount_sentence}",
+                f"across <b>{total_roi_titles:,}</b> theatrically-released titles "
+                f"(<b>{pct_above_be:.0%}</b> above break-even). "
+                f"The merger's ROI story lies in volume and awards prestige rather than pure box office returns."
+                f"{paramount_sentence}",
             ),
             unsafe_allow_html=True,
         )
         st.caption(
             f"Coverage: {total_roi_titles:,} of ~{total_titles:,} titles "
             f"({total_roi_titles/max(total_titles,1):.0%}). "
-            "Excludes streaming-only originals where no theatrical release occurred."
+            "Excludes streaming-only originals. Bar color: red = below break-even, amber = 1–2x, green = 2x+."
         )
 
         # ── ROI Explorer ──────────────────────────────────────────────────
@@ -625,15 +797,25 @@ if "budget_usd" in titles.columns and "box_office_usd" in titles.columns:
                     lambda g: _fmt_genre(g[0]) if isinstance(g, list) and len(g) > 0 else "Other"
                 )
 
-                all_genres_roi = sorted(plat_roi_data["genre_display"].dropna().unique())
-                selected_genres_roi = st.multiselect(
-                    "Filter by genre", all_genres_roi, default=all_genres_roi, key="roi_genre_filter"
-                )
+                _exp_c1, _exp_c2 = st.columns([3, 1])
+                with _exp_c1:
+                    all_genres_roi = sorted(plat_roi_data["genre_display"].dropna().unique())
+                    selected_genres_roi = st.multiselect(
+                        "Filter by genre", all_genres_roi, default=all_genres_roi, key="roi_genre_filter"
+                    )
+                with _exp_c2:
+                    cap_outliers = st.toggle("Cap outliers at 20x", value=True, key="roi_cap_outliers")
+
                 filtered_roi = plat_roi_data[plat_roi_data["genre_display"].isin(selected_genres_roi)].copy()
 
                 search_title = st.text_input(
                     "Highlight a title", placeholder="Type title name...", key="roi_title_search"
                 )
+
+                # Clip ROI values when cap is on so Plotly auto-ranges cleanly
+                _roi_cap = 20.0
+                if cap_outliers:
+                    filtered_roi["roi_proxy"] = filtered_roi["roi_proxy"].clip(upper=_roi_cap)
 
                 tier_map = {"Low (<$10M)": 0, "Mid ($10–50M)": 1, "High ($50–200M)": 2, "Blockbuster (>$200M)": 3}
                 filtered_roi["tier_num"] = filtered_roi["Budget Tier"].map(tier_map).fillna(0)
@@ -704,22 +886,60 @@ if "budget_usd" in titles.columns and "box_office_usd" in titles.columns:
                         name="Highlighted", showlegend=False,
                     ))
 
-                fig_detail.add_hline(y=1.0, line_dash="dot", line_color="#aaa", annotation_text="Break-even")
+                # Median lines per budget tier
+                for tier_lbl, tier_num_val in tier_map.items():
+                    tier_data = filtered_roi[filtered_roi["Budget Tier"] == tier_lbl]["roi_proxy"]
+                    if len(tier_data) >= 3:
+                        tier_med = tier_data.median()
+                        fig_detail.add_shape(
+                            type="line",
+                            x0=tier_num_val - 0.4, x1=tier_num_val + 0.4,
+                            y0=tier_med, y1=tier_med,
+                            line=dict(color="#FFD700", width=2, dash="dot"),
+                        )
+                        fig_detail.add_annotation(
+                            x=tier_num_val + 0.42, y=tier_med,
+                            text=f"med {tier_med:.1f}x",
+                            showarrow=False, xanchor="left",
+                            font=dict(color="#FFD700", size=10),
+                        )
+
+                fig_detail.add_hline(y=1.0, line_dash="dot", line_color="#aaa", annotation_text="Break-even (1x)")
+
                 fig_detail.update_layout(
-                    title=f"{PLATFORMS.get(roi_plat, {}).get('name', roi_plat)} — Individual Title ROI",
+                    title=f"{PLATFORMS.get(roi_plat, {}).get('name', roi_plat)} — Individual Title ROI by Budget Tier",
                     xaxis=dict(
                         tickvals=[0, 1, 2, 3],
                         ticktext=["Low (<$10M)", "Mid ($10–50M)", "High ($50–200M)", "Blockbuster (>$200M)"],
                         title="Budget Tier",
+                        range=[-0.6, 3.6],
                     ),
-                    yaxis_title="ROI (box office / budget)",
-                    template=PLOTLY_TEMPLATE, height=450,
+                    yaxis=dict(title="ROI (box office / budget)", rangemode="tozero", autorange=True),
+                    template=PLOTLY_TEMPLATE, height=460,
+                    margin=dict(r=100),
                 )
                 st.plotly_chart(fig_detail, use_container_width=True)
+
+                # Per-tier summary stats table
+                tier_stats = []
+                for tier_lbl in ["Low (<$10M)", "Mid ($10–50M)", "High ($50–200M)", "Blockbuster (>$200M)"]:
+                    td = filtered_roi[filtered_roi["Budget Tier"] == tier_lbl]["roi_proxy"]
+                    if len(td) > 0:
+                        tier_stats.append({
+                            "Budget Tier": tier_lbl,
+                            "Titles": len(td),
+                            "Median ROI": f"{td.median():.2f}x",
+                            "% Above Break-even": f"{(td >= 1.0).mean():.0%}",
+                            "Best ROI": f"{td.max():.1f}x",
+                        })
+                if tier_stats:
+                    ts_df = pd.DataFrame(tier_stats)
+                    st.dataframe(ts_df, hide_index=True, use_container_width=True)
+
                 st.caption(
                     f"Each dot is one title with Wikidata budget and box office data "
                     f"({len(filtered_roi)} titles shown). "
-                    "Only titles with both fields populated are shown. Dot size = audience (IMDb votes)."
+                    "Dot size = audience (IMDb votes). Gold dashed lines = per-tier median."
                 )
             else:
                 st.info("No budget/box office data available for this platform.")
@@ -868,9 +1088,13 @@ with gap_col1:
         format_func=lambda x: PLATFORMS.get(x, {}).get("name", x) if x != "merged" else "Merged (Netflix + Max)",
     )
 with gap_col2:
+    # Build compare-against pool: All Competitors + merged + every individual platform
+    # Exclude whichever perspective the user already selected (can't compare against yourself)
+    _compare_pool = ["All Competitors", "merged"] + ALL_PLATFORMS
+    _compare_options = [x for x in _compare_pool if x != gap_perspective]
     gap_competitor = st.selectbox(
-        "Compare against", ["All Competitors"] + COMPETITOR_PLATFORMS, key="gap_comp",
-        format_func=lambda x: PLATFORMS.get(x, {}).get("name", x) if x != "All Competitors" else x,
+        "Compare against", _compare_options, key="gap_comp",
+        format_func=lambda x: x if x == "All Competitors" else PLATFORMS.get(x, {}).get("name", x),
     )
 
 try:
@@ -1011,7 +1235,7 @@ if not gaps.empty:
                     <span>Leader: <b style="color:{CARD_TEXT};">{leader_str}</b></span>
                     <span>Audience Demand: <b style="color:{CARD_TEXT};">{demand_str}</b></span>
                 </div>
-                <div style="margin-top:8px;font-size:0.88em;color:{CARD_TEXT};border-top:1px solid {CARD_BORDER};padding-top:6px;">🎯 {rec_str}</div>
+                <div style="margin-top:8px;font-size:0.88em;color:{CARD_TEXT};border-top:1px solid {CARD_BORDER};padding-top:6px;">{rec_str}</div>
             </div>""", unsafe_allow_html=True)
         except Exception:
             continue
@@ -1026,7 +1250,7 @@ if not gaps.empty:
     )
 
     try:
-        shortlist = compute_acquisition_shortlist(titles, gaps)
+        shortlist = compute_acquisition_shortlist(titles, gaps, perspective=gap_perspective)
         poster_map = {}
         if "poster_url" in titles.columns:
             poster_map = titles.dropna(subset=["poster_url"]).set_index("title")["poster_url"].to_dict()
@@ -1057,7 +1281,7 @@ if not gaps.empty:
                         f'<span>Avg IMDb: <b style="color:{CARD_TEXT};">{"%.2f" % float(qv) if pd.notna(qv) else "N/A"}</b></span>'
                         f'<span>Leader: <b style="color:{CARD_TEXT};">{leader_str}</b></span>'
                         f'<span>Demand: <b style="color:{CARD_TEXT};">{demand_str}</b></span>'
-                        f'</div><div style="margin-top:6px;font-size:0.86em;color:{CARD_TEXT};">🎯 {rec_str}</div></div>',
+                        f'</div><div style="margin-top:6px;font-size:0.86em;color:{CARD_TEXT};">{rec_str}</div></div>',
                         unsafe_allow_html=True,
                     )
 
@@ -1142,7 +1366,7 @@ if not gaps.empty:
                                     except Exception:
                                         _genres_raw = [g.strip() for g in _genres_raw.strip("[]").split(",") if g.strip()]
                                 _genre_pills = "".join(
-                                    f'<span style="background:rgba(0,180,166,0.12);color:#00B4A6;padding:2px 8px;border-radius:10px;font-size:0.75em;margin-right:4px;">{g}</span>'
+                                    f'<span style="background:rgba(0,180,166,0.12);color:#00B4A6;padding:2px 8px;border-radius:10px;font-size:0.75em;margin-right:4px;">{_fmt_genre(g)}</span>'
                                     for g in (_genres_raw[:5] if _genres_raw else [])
                                 )
 
@@ -1167,7 +1391,7 @@ if not gaps.empty:
 
                                 _aw = _d.get("award_wins")
                                 _awards_html = (
-                                    f'<span style="color:#FFD700;font-size:0.8em;margin-left:8px;">🏆 {int(_aw)} award{"s" if int(_aw) != 1 else ""}</span>'
+                                    f'<span style="color:#FFD700;font-size:0.8em;margin-left:8px;">{int(_aw)} award{"s" if int(_aw) != 1 else ""}</span>'
                                     if _aw and pd.notna(_aw) and int(_aw) > 0 else ""
                                 )
                                 _coll = _d.get("collection_name")
@@ -1303,7 +1527,7 @@ try:
         f"targeted acquisition and original production in <b>{genres_display}</b>. "
         f"{quality_note} {comp_context}{comp_closing}"
     )
-    st.markdown(styled_banner_html("🎯", rec_text), unsafe_allow_html=True)
+    st.markdown(styled_banner_html("", rec_text), unsafe_allow_html=True)
 
 except Exception as e:
     st.warning(f"Competitive positioning could not be computed: {e}")
@@ -1586,7 +1810,7 @@ else:
                 f"with an avg IMDb of <b>{sc_imdb_val}</b>. "
                 f"Strategic profile: {_strategic_profile(platform_a, platform_b)}."
             )
-            st.markdown(styled_banner_html("🔍", takeaway), unsafe_allow_html=True)
+            st.markdown(styled_banner_html("", takeaway), unsafe_allow_html=True)
 
     except Exception as e:
         st.warning(f"Alternative scenario could not be computed: {e}")
@@ -1659,12 +1883,11 @@ except Exception as e:
 
 # ─── Footer ───────────────────────────────────────────────────────────────────
 st.markdown(
-    '<div style="border-top:1px solid #333;padding:16px 0;color:#666;'
-    'font-size:0.8em;text-align:center;">'
-    'Hypothetical merger for academic analysis only. Data is a snapshot (mid-2023). '
-    'Enrichment data from Wikidata (72% award coverage), TMDB, IMDb public datasets. '
-    'Netflix withdrew from this acquisition (Feb 26, 2026). '
-    'All insights are illustrative, not prescriptive.'
+    '<div style="color:#555;font-size:0.8em;text-align:center;padding:8px 0 16px;">'
+    'Hypothetical merger for academic analysis. '
+    'Data is a snapshot (mid-2023). '
+    'All insights are illustrative, not prescriptive. '
+    'As of Feb 26, 2026, Netflix withdrew from this acquisition.'
     '</div>',
     unsafe_allow_html=True,
 )
