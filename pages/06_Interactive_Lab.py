@@ -2093,18 +2093,55 @@ with tab3:
     STRATEGIES = {
         "Blockbuster Hunter": {
             "tagline": "Chases mass-appeal hits — huge vote counts, broad audiences.",
-            "focus": ["pct_above_7", "avg_votes", "freshness"],
+            "focus": ["audience_draw", "recency", "critical_hits"],
             "icon": "🎬",
         },
         "Critic's Darling": {
             "tagline": "Chases prestige — top IMDb scores and award winners.",
-            "focus": ["avg_imdb", "prestige", "pct_above_7"],
+            "focus": ["critical_hits", "award_pedigree", "catalog_quality"],
             "icon": "🏆",
         },
         "Balanced Strategist": {
             "tagline": "Picks the strongest all-round title every round — no weakness.",
-            "focus": ["avg_imdb", "pct_above_7", "prestige", "diversity", "freshness"],
+            "focus": ["catalog_quality", "critical_hits", "genre_breadth"],
             "icon": "⚖️",
+        },
+    }
+
+    # ── Strategy outcome prose ────────────────────────────────────────────────
+    WIN_PROSE = {
+        "Blockbuster Hunter": {
+            "win": (
+                "Your catalog commands a wider audience. "
+                "Better reach and stronger modern relevance — you drafted the more compelling mass-market service."
+            ),
+            "loss": (
+                "The Blockbuster Hunter played to its strengths, "
+                "securing titles with broader audiences and stronger modern relevance than yours."
+            ),
+            "draw": "An even match on crowd-appeal. Both services drew similar audiences across different title choices.",
+        },
+        "Critic's Darling": {
+            "win": (
+                "Your curation matched — and surpassed — the Critic's Darling. "
+                "Deeper critical acclaim and stronger award recognition gave your service the definitive edge."
+            ),
+            "loss": (
+                "The Critic's Darling assembled a tighter prestige catalog. "
+                "More acclaimed titles and deeper award recognition secured its win."
+            ),
+            "draw": "Prestige for prestige — neither service claimed the definitive critical edge.",
+        },
+        "Balanced Strategist": {
+            "win": (
+                "A decisive across-the-board performance. "
+                "You outbuilt the Balanced Strategist on all the dimensions that matter in a great streaming library."
+            ),
+            "loss": (
+                "The Balanced Strategist is hard to beat — its strength is having no weak spots. "
+                "One dimension ultimately tipped the scales against you."
+            ),
+            "draw": "The closest kind of contest. Balanced against balanced — neither service found a decisive edge.",
         },
     }
 
@@ -2122,27 +2159,38 @@ with tab3:
 
     def _service_metrics(picks):
         if not picks:
-            return {"avg_imdb": 0, "pct_above_7": 0, "prestige": 0, "diversity": 0,
-                    "freshness": 0, "total": 0, "avg_votes": 0}
+            return {
+                "total": 0, "catalog_quality": 0.0, "critical_hits": 0.0,
+                "audience_draw": 0.0, "award_pedigree": 0.0,
+                "genre_breadth": 0.0, "recency": 0.0,
+            }
         df = pd.DataFrame(picks)
-        imdb = pd.to_numeric(df.get("imdb_score", pd.Series(dtype=float)), errors="coerce").dropna()
-        avg_imdb = float(imdb.mean()) if len(imdb) > 0 else 0
-        pct_above_7 = float((imdb >= 7.0).mean() * 100) if len(imdb) > 0 else 0
-        award_wins = pd.to_numeric(df.get("award_wins_val", df.get("award_wins", pd.Series(0, index=df.index))), errors="coerce").fillna(0)
-        prestige = float((award_wins > 0).mean() * 100) if len(award_wins) > 0 else 0
-        diversity = _genre_entropy(picks)
+        imdb = pd.to_numeric(df.get("imdb_score", pd.Series(dtype=float)), errors="coerce")
+        bay = pd.to_numeric(df.get("bayesian_score", pd.Series(dtype=float)), errors="coerce")
+        # catalog_quality: bayesian-weighted avg when available, else raw imdb
+        quality_s = bay.where(bay.notna(), imdb)
+        catalog_quality = float(quality_s.dropna().mean()) if quality_s.notna().any() else 0.0
+        # critical_hits: % with imdb >= 8.0 (true standouts)
+        critical_hits = float((imdb.dropna() >= 8.0).mean() * 100) if imdb.notna().any() else 0.0
+        # audience_draw: avg IMDb vote count (proxy for cultural reach)
+        votes = pd.to_numeric(df.get("imdb_votes", pd.Series(dtype=float)), errors="coerce")
+        audience_draw = float(votes.dropna().mean()) if votes.notna().any() else 0.0
+        # award_pedigree: avg award wins per title (depth of recognition)
+        aw = pd.to_numeric(df.get("award_wins_val", df.get("award_wins", pd.Series(0, index=df.index))), errors="coerce").fillna(0)
+        award_pedigree = float(aw.mean()) if len(aw) > 0 else 0.0
+        # genre_breadth: entropy of genre distribution
+        genre_breadth = _genre_entropy(picks)
+        # recency: % of titles released 2019+
         ry = pd.to_numeric(df.get("release_year", pd.Series(dtype=float)), errors="coerce")
-        freshness = float((ry >= 2015).mean() * 100) if len(ry) > 0 else 0
-        votes = pd.to_numeric(df.get("imdb_votes", pd.Series(dtype=float)), errors="coerce").dropna()
-        avg_votes = float(votes.mean()) if len(votes) > 0 else 0
+        recency = float((ry >= 2019).mean() * 100) if ry.notna().any() else 0.0
         return {
             "total": len(picks),
-            "avg_imdb": avg_imdb,
-            "pct_above_7": pct_above_7,
-            "prestige": prestige,
-            "diversity": diversity,
-            "freshness": freshness,
-            "avg_votes": avg_votes,
+            "catalog_quality": catalog_quality,
+            "critical_hits": critical_hits,
+            "audience_draw": audience_draw,
+            "award_pedigree": award_pedigree,
+            "genre_breadth": genre_breadth,
+            "recency": recency,
         }
 
     def _ai_strategy_score(pool_df, strategy):
@@ -2394,14 +2442,14 @@ with tab3:
             score_col_u, score_col_a = st.columns(2)
             with score_col_u:
                 st.markdown(f'<div style="color:{CARD_ACCENT};font-weight:700;text-align:center;">You</div>', unsafe_allow_html=True)
-                st.metric("Avg IMDb", f"{user_stats['avg_imdb']:.2f}")
-                st.metric("Prestige", f"{user_stats['prestige']:.0f}%")
-                st.metric("Diversity", f"{user_stats['diversity']:.2f}")
+                st.metric("Catalog Quality", f"{user_stats['catalog_quality']:.2f}")
+                st.metric("Critical Hits", f"{user_stats['critical_hits']:.0f}%")
+                st.metric("Award Pedigree", f"{user_stats['award_pedigree']:.1f}/title")
             with score_col_a:
                 st.markdown(f'<div style="color:#00b4d8;font-weight:700;text-align:center;">AI</div>', unsafe_allow_html=True)
-                st.metric("Avg IMDb", f"{ai_stats['avg_imdb']:.2f}")
-                st.metric("Prestige", f"{ai_stats['prestige']:.0f}%")
-                st.metric("Diversity", f"{ai_stats['diversity']:.2f}")
+                st.metric("Catalog Quality", f"{ai_stats['catalog_quality']:.2f}")
+                st.metric("Critical Hits", f"{ai_stats['critical_hits']:.0f}%")
+                st.metric("Award Pedigree", f"{ai_stats['award_pedigree']:.1f}/title")
 
             with st.expander(f"AI's picks ({len(st.session_state.draft_ai_picks)})"):
                 for p in st.session_state.draft_ai_picks:
@@ -2428,10 +2476,9 @@ with tab3:
         focus_metrics = strat_info["focus"]
 
         # ── Strategy-aware winner logic ───────────────────────────────────────
-        # Metrics compared on the final scoreboard
-        all_metrics = ["avg_imdb", "pct_above_7", "prestige", "diversity", "freshness"]
-        # Weight focus metrics 2x, others 1x
-        weights = {m: (2.0 if m in focus_metrics else 1.0) for m in all_metrics}
+        all_metrics = ["catalog_quality", "critical_hits", "audience_draw",
+                       "award_pedigree", "genre_breadth", "recency"]
+        weights = {m: (2.5 if m in focus_metrics else 1.0) for m in all_metrics}
 
         user_weighted = 0.0
         ai_weighted = 0.0
@@ -2449,14 +2496,11 @@ with tab3:
         user_won = user_weighted > ai_weighted
         ai_won = ai_weighted > user_weighted
 
-        # ── Banner (with balloons on user win, matching Wordle pattern) ───────
-        focus_labels = {
-            "avg_imdb": "Avg IMDb", "pct_above_7": "% above 7.0",
-            "prestige": "Prestige", "diversity": "Diversity",
-            "freshness": "Freshness", "avg_votes": "Audience Reach",
-        }
-        focus_blurb = " · ".join(focus_labels.get(m, m) for m in focus_metrics)
+        prose_dict = WIN_PROSE.get(strategy_name, WIN_PROSE["Balanced Strategist"])
+        outcome_key = "win" if user_won else ("loss" if ai_won else "draw")
+        outcome_prose = prose_dict[outcome_key]
 
+        # ── Banner (balloons on user win — matching Wordle) ───────────────────
         if user_won:
             if not st.session_state.get("draft_win_celebrated"):
                 st.balloons()
@@ -2464,61 +2508,90 @@ with tab3:
             st.markdown(
                 f'<div style="background:linear-gradient(135deg,#0a2e18,#0d4022);'
                 f'border:2px solid #2ecc71;border-top:4px solid #2ecc71;border-radius:14px;'
-                f'padding:32px 24px;margin-bottom:20px;text-align:center;'
-                f'box-shadow:0 0 40px rgba(46,204,113,0.25);">'
-                f'<div style="color:#2ecc71;font-size:0.75rem;text-transform:uppercase;letter-spacing:3px;margin-bottom:10px;">Victory</div>'
-                f'<div style="color:#ffffff;font-size:2rem;font-weight:900;letter-spacing:-0.5px;margin-bottom:6px;">'
-                f'You beat {strat_icon} {strategy_name}</div>'
-                f'<div style="color:#5dde8a;font-size:1rem;margin-bottom:18px;">'
-                f'Outperformed on <b>{user_metric_wins}</b> of {len(all_metrics)} metrics · weighted score '
-                f'<b>{user_weighted:.1f}</b>–<b>{ai_weighted:.1f}</b></div>'
-                f'<div style="display:inline-flex;gap:24px;justify-content:center;flex-wrap:wrap;'
-                f'background:rgba(46,204,113,0.08);border-radius:10px;padding:12px 24px;">'
-                f'<span style="color:#aaa;font-size:0.9rem;">Focus: {focus_blurb}</span>'
+                f'padding:32px 28px;margin-bottom:22px;text-align:center;'
+                f'box-shadow:0 0 40px rgba(46,204,113,0.22);">'
+                f'<div style="color:#2ecc71;font-size:0.7rem;text-transform:uppercase;letter-spacing:4px;margin-bottom:10px;">Victory</div>'
+                f'<div style="color:#ffffff;font-size:1.9rem;font-weight:900;letter-spacing:-0.5px;margin-bottom:10px;">'
+                f'Your service wins</div>'
+                f'<div style="color:#c8f5d8;font-size:0.97rem;max-width:480px;margin:0 auto 18px;line-height:1.5;">'
+                f'{outcome_prose}</div>'
+                f'<div style="display:inline-flex;gap:20px;background:rgba(46,204,113,0.09);'
+                f'border-radius:10px;padding:10px 22px;flex-wrap:wrap;justify-content:center;">'
+                f'<span style="color:#8ef2b0;font-size:0.85rem;">{user_metric_wins} of {len(all_metrics)} metrics</span>'
+                f'<span style="color:#6b9a7a;font-size:0.85rem;">·</span>'
+                f'<span style="color:#8ef2b0;font-size:0.85rem;">vs {strat_icon} {strategy_name}</span>'
                 f'</div></div>',
                 unsafe_allow_html=True,
             )
         elif ai_won:
             st.markdown(
-                f'<div style="background:linear-gradient(135deg,#2d0000,#3a0a0a);'
-                f'border:2px solid #e74c3c;border-top:4px solid #e74c3c;border-radius:14px;'
-                f'padding:28px 24px;margin-bottom:20px;text-align:center;">'
-                f'<div style="color:#e74c3c;font-size:0.75rem;text-transform:uppercase;letter-spacing:3px;margin-bottom:10px;">Defeat</div>'
-                f'<div style="color:#ffffff;font-size:1.7rem;font-weight:900;margin-bottom:6px;">'
+                f'<div style="background:linear-gradient(135deg,#220808,#2e1010);'
+                f'border:2px solid #c0392b;border-top:4px solid #c0392b;border-radius:14px;'
+                f'padding:28px 28px;margin-bottom:22px;text-align:center;">'
+                f'<div style="color:#e74c3c;font-size:0.7rem;text-transform:uppercase;letter-spacing:4px;margin-bottom:10px;">Defeat</div>'
+                f'<div style="color:#ffffff;font-size:1.9rem;font-weight:900;margin-bottom:10px;">'
                 f'{strat_icon} {strategy_name} wins</div>'
-                f'<div style="color:#ff9a8a;font-size:0.95rem;">AI outperformed on '
-                f'<b>{ai_metric_wins}</b> of {len(all_metrics)} metrics · weighted <b>{ai_weighted:.1f}</b>–<b>{user_weighted:.1f}</b></div>'
-                f'</div>',
+                f'<div style="color:#f2c1bb;font-size:0.97rem;max-width:480px;margin:0 auto 18px;line-height:1.5;">'
+                f'{outcome_prose}</div>'
+                f'<div style="display:inline-flex;gap:20px;background:rgba(192,57,43,0.09);'
+                f'border-radius:10px;padding:10px 22px;flex-wrap:wrap;justify-content:center;">'
+                f'<span style="color:#f0a99e;font-size:0.85rem;">AI won {ai_metric_wins} of {len(all_metrics)} metrics</span>'
+                f'</div></div>',
                 unsafe_allow_html=True,
             )
         else:
             st.markdown(
-                f'<div style="background:rgba(0,180,166,0.1);border:2px solid #00B4A6;'
-                f'border-radius:14px;padding:24px;margin-bottom:20px;text-align:center;">'
-                f'<div style="color:#00B4A6;font-size:0.75rem;text-transform:uppercase;letter-spacing:3px;margin-bottom:8px;">Draw</div>'
-                f'<div style="color:#fff;font-size:1.6rem;font-weight:800;">Dead heat vs {strat_icon} {strategy_name}</div>'
-                f'<div style="color:#aaa;margin-top:6px;">Weighted score {user_weighted:.1f}–{ai_weighted:.1f}</div>'
+                f'<div style="background:rgba(0,180,166,0.08);border:2px solid #00B4A6;'
+                f'border-radius:14px;padding:26px 28px;margin-bottom:22px;text-align:center;">'
+                f'<div style="color:#00B4A6;font-size:0.7rem;text-transform:uppercase;letter-spacing:4px;margin-bottom:10px;">Draw</div>'
+                f'<div style="color:#fff;font-size:1.8rem;font-weight:800;margin-bottom:10px;">All square</div>'
+                f'<div style="color:#9fd;font-size:0.97rem;max-width:480px;margin:0 auto;line-height:1.5;">'
+                f'{outcome_prose}</div>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
 
-        # ── Strategy Scorecard — focus metrics highlighted ────────────────────
+        # ── Strategy Scorecard — focus metrics starred ────────────────────────
+        metric_meta = {
+            "catalog_quality": ("Catalog Quality", "Bayesian-weighted avg IMDb — penalises titles with few votes."),
+            "critical_hits":   ("Critical Hits",   "Share of picks with an IMDb score of 8.0 or above."),
+            "audience_draw":   ("Audience Draw",   "Average IMDb vote count — a proxy for cultural reach."),
+            "award_pedigree":  ("Award Pedigree",  "Average award wins per title — depth of recognition."),
+            "genre_breadth":   ("Genre Breadth",   "Genre diversity (entropy). Higher = more varied catalog."),
+            "recency":         ("Catalog Recency", "Share of titles released in 2019 or later."),
+        }
+
+        def _fmt_metric(mk, val):
+            if mk == "catalog_quality":   return f"{val:.2f}"
+            if mk == "critical_hits":     return f"{val:.1f}%"
+            if mk == "audience_draw":     return format_votes(val) if val > 0 else "—"
+            if mk == "award_pedigree":    return f"{val:.2f} per title"
+            if mk == "genre_breadth":     return f"{val:.2f}"
+            if mk == "recency":           return f"{val:.1f}%"
+            return str(val)
+
+        focus_names = [metric_meta[m][0] for m in focus_metrics if m in metric_meta]
         st.markdown(
             section_header_html(
-                f"{strat_icon} {strategy_name} Scorecard",
-                f"Focus metrics (weighted 2×): {focus_blurb}",
+                f"Head-to-Head Scorecard",
+                f"★ Focus metrics for {strategy_name}: {' · '.join(focus_names)}",
             ),
             unsafe_allow_html=True,
         )
 
-        metric_labels = {
-            "avg_imdb": ("Avg IMDb", "{:.2f}"),
-            "pct_above_7": ("% above 7.0", "{:.1f}%"),
-            "prestige": ("Prestige (award winners)", "{:.1f}%"),
-            "diversity": ("Genre Diversity", "{:.2f}"),
-            "freshness": ("Freshness (post-2015)", "{:.1f}%"),
-        }
-        for mk, (mlabel, mfmt) in metric_labels.items():
+        # Column headers
+        st.markdown(
+            f'<div style="display:flex;align-items:center;padding:6px 12px;'
+            f'border-bottom:2px solid {CARD_BORDER};">'
+            f'<span style="flex:1;text-align:right;color:{CARD_ACCENT};font-size:0.82em;font-weight:700;">You</span>'
+            f'<span style="flex:1.8;text-align:center;"></span>'
+            f'<span style="flex:1;text-align:left;color:#00b4d8;font-size:0.82em;font-weight:700;">{strat_icon} AI</span>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        for mk in all_metrics:
+            mlabel, mdesc = metric_meta.get(mk, (mk, ""))
             u_val = user_stats[mk]
             a_val = ai_stats[mk]
             u_wins_this = u_val > a_val
@@ -2526,43 +2599,42 @@ with tab3:
             is_focus = mk in focus_metrics
             u_color = "#2ecc71" if u_wins_this else CARD_TEXT
             a_color = "#00b4d8" if a_wins_this else CARD_TEXT
-            u_check = " ✓" if u_wins_this else ""
-            a_check = " ✓" if a_wins_this else ""
-            label_prefix = "★ " if is_focus else ""
+            label_prefix = "★ " if is_focus else "   "
             label_color = CARD_ACCENT if is_focus else CARD_TEXT_MUTED
             row_bg = "rgba(255,215,0,0.04)" if is_focus else "transparent"
+            u_str = _fmt_metric(mk, u_val) + (" ✓" if u_wins_this else "")
+            a_str = _fmt_metric(mk, a_val) + (" ✓" if a_wins_this else "")
             st.markdown(
-                f'<div style="display:flex;align-items:center;padding:8px 12px;background:{row_bg};'
-                f'border-bottom:1px solid {CARD_BORDER};border-radius:4px;">'
-                f'<span style="flex:1;text-align:right;color:{u_color};font-weight:{"700" if u_wins_this else "500"};">'
-                f'{mfmt.format(u_val)}{u_check}</span>'
-                f'<span style="flex:1.8;text-align:center;color:{label_color};font-size:0.88em;padding:0 12px;font-weight:{"600" if is_focus else "400"};">'
-                f'{label_prefix}{mlabel}</span>'
-                f'<span style="flex:1;text-align:left;color:{a_color};font-weight:{"700" if a_wins_this else "500"};">'
-                f'{mfmt.format(a_val)}{a_check}</span>'
+                f'<div style="display:flex;align-items:center;padding:9px 12px;background:{row_bg};'
+                f'border-bottom:1px solid {CARD_BORDER};" title="{mdesc}">'
+                f'<span style="flex:1;text-align:right;color:{u_color};font-weight:{"700" if u_wins_this else "400"};'
+                f'font-size:0.92em;">{u_str}</span>'
+                f'<div style="flex:1.8;text-align:center;padding:0 12px;">'
+                f'<div style="color:{label_color};font-size:0.88em;font-weight:{"600" if is_focus else "400"};">'
+                f'{label_prefix}{mlabel}</div>'
+                f'<div style="color:{CARD_TEXT_MUTED};font-size:0.73em;margin-top:1px;">{mdesc}</div>'
+                f'</div>'
+                f'<span style="flex:1;text-align:left;color:{a_color};font-weight:{"700" if a_wins_this else "400"};'
+                f'font-size:0.92em;">{a_str}</span>'
                 f'</div>',
                 unsafe_allow_html=True,
             )
-        st.markdown(
-            f'<div style="display:flex;justify-content:space-around;padding:8px 12px;'
-            f'color:{CARD_TEXT_MUTED};font-size:0.78em;margin-top:4px;">'
-            f'<span>You</span><span>AI ({strategy_name})</span></div>',
-            unsafe_allow_html=True,
-        )
 
         # ── Radar chart ───────────────────────────────────────────────────────
-        st.markdown(section_header_html("Radar Comparison"), unsafe_allow_html=True)
-        radar_metrics = ["avg_imdb", "pct_above_7", "prestige", "diversity", "freshness"]
-        radar_labels = ["Avg IMDb", "% above 7.0", "Prestige", "Genre Diversity", "Freshness"]
+        st.markdown(section_header_html("Radar Comparison", "Normalized 0–100 per metric."), unsafe_allow_html=True)
+        radar_metrics = ["catalog_quality", "critical_hits", "audience_draw",
+                         "award_pedigree", "genre_breadth", "recency"]
+        radar_labels = ["Catalog Quality", "Critical Hits", "Audience Draw",
+                        "Award Pedigree", "Genre Breadth", "Recency"]
 
-        # Normalize 0–100
         def _norm(val, metric):
             ranges = {
-                "avg_imdb": (1, 10),
-                "pct_above_7": (0, 100),
-                "prestige": (0, 100),
-                "diversity": (0, 5),
-                "freshness": (0, 100),
+                "catalog_quality": (5.0, 9.5),
+                "critical_hits":   (0, 60),
+                "audience_draw":   (0, 600_000),
+                "award_pedigree":  (0, 8),
+                "genre_breadth":   (0, 3.2),
+                "recency":         (0, 100),
             }
             lo, hi = ranges.get(metric, (0, 100))
             return max(0, min(100, (val - lo) / (hi - lo) * 100))
