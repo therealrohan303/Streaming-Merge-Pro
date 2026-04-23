@@ -1,6 +1,8 @@
 """Page 6: Interactive Lab — Greenlight Studio, Franchise Explorer, Draft Room."""
 
+import hashlib
 import math
+from datetime import date
 
 import numpy as np
 import pandas as pd
@@ -78,6 +80,9 @@ for _key, _default in [
     ("draft_complete", False),
     ("draft_ai_prepicked_round", -1),  # round index in which AI has pre-picked (when AI goes first)
     ("draft_win_celebrated", False),
+    ("draft_gs_genre", None),  # Genre Specialist dominant genre
+    # CinemaGuess
+    ("cg", None),
 ]:
     if _key not in st.session_state:
         st.session_state[_key] = _default
@@ -314,6 +319,120 @@ ALL_GENRES_LIST = [
     "sport", "thriller", "war", "western",
 ]
 
+# ─── CinemaGuess constants & loader ─────────────────────────────────────────
+_GAME_CATALOG_PATH = PRECOMPUTED_DIR / "game_catalog.parquet"
+_CG_MAX_GUESSES = 6
+_CG_BLUR_SCHEDULE = [18, 14, 10, 7, 4, 2, 0]
+
+_CG_CLUE_DEFS = [
+    (
+        "Genre(s)",
+        lambda r: (
+            ", ".join(g.capitalize() for g in list(r["genres"])[:3])
+            if r.get("genres") is not None and len(r["genres"]) > 0
+            else "Unknown"
+        ),
+    ),
+    (
+        "Decade",
+        lambda r: (
+            f"{int(r['release_year'] // 10) * 10}s"
+            if pd.notna(r.get("release_year"))
+            else "Unknown"
+        ),
+    ),
+    ("Type", lambda r: r.get("type", "Unknown")),
+    (
+        "Runtime / Seasons",
+        lambda r: (
+            f"{int(r['runtime'])} min"
+            if r.get("type") == "Movie" and pd.notna(r.get("runtime"))
+            else f"{int(r['seasons'])} season(s)"
+            if pd.notna(r.get("seasons"))
+            else "Unknown"
+        ),
+    ),
+    (
+        "First letter",
+        lambda r: (
+            "The " + r["title"][4].upper()
+            if r.get("title", "").startswith("The ")
+            else r.get("title", "?")[0].upper()
+        ),
+    ),
+]
+
+
+@st.cache_data
+def _load_game_catalog():
+    if not _GAME_CATALOG_PATH.exists():
+        return None
+    df = pd.read_parquet(_GAME_CATALOG_PATH)
+    has_backdrop = df["backdrop_url"].notna()
+    return df[has_backdrop].reset_index(drop=True)
+
+
+def _cg_filtered_pool(df: pd.DataFrame, answer: dict, clues_revealed: int) -> pd.DataFrame:
+    """Return subset of df that matches all revealed clues for the answer."""
+    mask = pd.Series(True, index=df.index)
+
+    # Clue 0 — genres (revealed after guess 1)
+    if clues_revealed >= 1:
+        _raw = answer.get("genres")
+        ans_genres = set(_raw) if _raw is not None and len(_raw) > 0 else set()
+        if ans_genres:
+            def _has_genre_overlap(row_genres):
+                if row_genres is None:
+                    return False
+                try:
+                    return bool(ans_genres & set(row_genres))
+                except TypeError:
+                    return False
+            mask &= df["genres"].apply(_has_genre_overlap)
+
+    # Clue 1 — decade (revealed after guess 2)
+    if clues_revealed >= 2 and pd.notna(answer.get("release_year")):
+        decade = int(answer["release_year"] // 10) * 10
+        mask &= (
+            df["release_year"]
+            .apply(lambda y: int(y // 10) * 10 if pd.notna(y) else None)
+            == decade
+        )
+
+    # Clue 2 — type (revealed after guess 3)
+    if clues_revealed >= 3 and answer.get("type"):
+        mask &= df["type"] == answer["type"]
+
+    # Clue 3 — runtime / seasons (revealed after guess 4)
+    if clues_revealed >= 4:
+        if answer.get("type") == "Movie" and pd.notna(answer.get("runtime")):
+            rt = int(answer["runtime"])
+            mask &= df["runtime"].apply(
+                lambda v: abs(int(v) - rt) <= 30 if pd.notna(v) else False
+            )
+        elif pd.notna(answer.get("seasons")):
+            mask &= df["seasons"].apply(
+                lambda v: abs(int(v) - int(answer["seasons"])) <= 1 if pd.notna(v) else False
+            )
+
+    # Clue 4 — first letter (revealed after guess 5)
+    if clues_revealed >= 5 and answer.get("title"):
+        t = answer["title"]
+        first_letter = (t[4].upper() if t.startswith("The ") else t[0].upper())
+        def _matches_letter(title):
+            if not isinstance(title, str):
+                return False
+            t2 = title.strip()
+            ch = t2[4].upper() if t2.startswith("The ") else t2[0].upper()
+            return ch == first_letter
+        mask &= df["title"].apply(_matches_letter)
+
+    # Always keep the answer itself in the pool
+    mask |= (df["title"].str.strip().str.lower() == answer.get("title", "").strip().lower())
+
+    return df[mask]
+
+
 # ─── Page header ─────────────────────────────────────────────────────────────
 st.markdown(
     page_header_html(
@@ -323,7 +442,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab1, tab2, tab3 = st.tabs(["Greenlight Studio", "Franchise Explorer", "Draft Room"])
+tab1, tab2, tab3, tab4 = st.tabs(["Greenlight Studio", "Franchise Explorer", "Draft Room", "CinemaGuess"])
 
 # =============================================================================
 # TAB 1: GREENLIGHT STUDIO
@@ -1097,9 +1216,10 @@ with tab1:
                 n_svd   = len(getattr(model, "svd_cols_", []) or [])
                 tones_n = len(getattr(model, "tone_keys_", []) or [])
 
-                cv_str   = f"{cv_r:.3f}"   if cv_r   is not None else "N/A"
-                base_str = f"{base_r:.3f}" if base_r is not None else "N/A"
-                impr_str = f"{(1 - cv_r/base_r)*100:.1f}%" if (cv_r and base_r and base_r > 0) else "N/A"
+                cv_str     = f"{cv_r:.3f}"   if cv_r   is not None else "N/A"
+                base_str   = f"{base_r:.3f}" if base_r is not None else "N/A"
+                impr_str   = f"{(1 - cv_r/base_r)*100:.1f}%" if (cv_r and base_r and base_r > 0) else "N/A"
+                t_size_str = f"{t_size:,}" if isinstance(t_size, (int, float)) else str(t_size)
 
                 gbm = getattr(model, "gbm_", None)
                 if gbm is not None and hasattr(gbm, "feature_importances_"):
@@ -1126,7 +1246,7 @@ with tab1:
 
 **Features:** {len(f_names)} total — {len(f_names) - n_svd} structured (genres, pairwise interactions, tones, runtime², cert×budget, franchise one-hots) + {n_svd} SVD components from the concept description TF-IDF + {tones_n} tone one-hots.
 
-**Training data:** {t_size:,} {content_type.lower()}s with IMDb score and ≥ 500 votes.
+**Training data:** {t_size_str} {content_type.lower()}s with IMDb score and ≥ 500 votes.
 
 **Cross-validation:** 5-fold
 
@@ -2549,6 +2669,248 @@ with tab3:
                     "text/csv",
                     use_container_width=True,
                 )
+
+# =============================================================================
+# TAB 4: CINEMA GUESS
+# =============================================================================
+with tab4:
+    st.markdown(
+        section_header_html(
+            "CinemaGuess",
+            "Guess the movie or show from a still frame — 6 chances.",
+        ),
+        unsafe_allow_html=True,
+    )
+
+    _game_df = _load_game_catalog()
+
+    if _game_df is None or _game_df.empty:
+        st.error(
+            "Game catalog not found. Run `python scripts/13_enrich_tmdb_game.py` to generate it."
+        )
+    else:
+        # ── Game state helpers ────────────────────────────────────────────────
+
+        def _cg_pick_daily(df):
+            h = int(hashlib.md5(date.today().isoformat().encode()).hexdigest(), 16)
+            return df.iloc[h % len(df)].to_dict()
+
+        def _cg_pick_random(df):
+            return df.sample(1).iloc[0].to_dict()
+
+        def _cg_init_game(mode="random"):
+            answer = _cg_pick_daily(_game_df) if mode == "daily" else _cg_pick_random(_game_df)
+            st.session_state.cg = {
+                "answer": answer,
+                "guesses": [],
+                "game_over": False,
+                "won": False,
+                "mode": mode,
+            }
+
+        if st.session_state.cg is None:
+            _cg_init_game("random")
+
+        cg = st.session_state.cg
+        answer = cg["answer"]
+        guesses = cg["guesses"]
+        num_guesses = len(guesses)
+        clues_revealed = num_guesses
+
+        # ── Mode controls ─────────────────────────────────────────────────────
+
+        col_mode, col_new = st.columns([3, 1])
+        with col_mode:
+            mode_choice = st.radio(
+                "Mode",
+                ["Random", "Daily Challenge"],
+                horizontal=True,
+                key="cg_mode_radio",
+                help="Daily Challenge: same title for everyone today.",
+            )
+        with col_new:
+            st.markdown("&nbsp;", unsafe_allow_html=True)
+            if st.button("New Game", type="primary", use_container_width=True, key="cg_new_game"):
+                _cg_init_game("daily" if mode_choice == "Daily Challenge" else "random")
+                st.rerun()
+
+        # ── Visual assets ─────────────────────────────────────────────────────
+
+        def _cg_blur_px():
+            if cg["game_over"]:
+                return 0
+            return _CG_BLUR_SCHEDULE[min(num_guesses, len(_CG_BLUR_SCHEDULE) - 1)]
+
+        def _cg_blurred_img_html(url, height=None):
+            blur = _cg_blur_px()
+            style = (
+                f"filter: blur({blur}px); transition: filter 0.4s ease; "
+                f"width:100%; border-radius:6px; display:block;"
+            )
+            if height:
+                style += f" height:{height}px; object-fit:cover;"
+            return f'<img src="{url}" style="{style}">'
+
+        has_backdrop = bool(answer.get("backdrop_url"))
+
+        if num_guesses == 0 and not cg["game_over"]:
+            st.caption(
+                f"Image starts blurred — unblurs a little with each guess. "
+                f"Current blur: {_cg_blur_px()}px"
+            )
+
+        if has_backdrop:
+            st.markdown(_cg_blurred_img_html(answer["backdrop_url"]), unsafe_allow_html=True)
+        else:
+            st.info("No visual assets available for this title — use the clues below.")
+
+        # ── Clue cards ────────────────────────────────────────────────────────
+
+        if clues_revealed > 0:
+            st.markdown(
+                section_header_html("Clues", "Revealed after each wrong guess."),
+                unsafe_allow_html=True,
+            )
+            n_clues = min(clues_revealed, len(_CG_CLUE_DEFS))
+            clue_cols = st.columns(n_clues)
+            for i in range(n_clues):
+                label, fn = _CG_CLUE_DEFS[i]
+                try:
+                    val = fn(answer)
+                except Exception:
+                    val = "Unknown"
+                with clue_cols[i]:
+                    st.markdown(
+                        f"""
+                        <div style="background:{CARD_BG};border:1px solid {CARD_BORDER};
+                                    border-top:3px solid {CARD_ACCENT};border-radius:6px;
+                                    padding:10px 12px;text-align:center;">
+                            <div style="color:#888;font-size:0.72rem;margin-bottom:4px;">{label}</div>
+                            <div style="color:{CARD_TEXT};font-weight:600;">{val}</div>
+                        </div>
+                        """,
+                        unsafe_allow_html=True,
+                    )
+
+        # ── Previous guesses ──────────────────────────────────────────────────
+
+        if guesses:
+            st.markdown(section_header_html("Your Guesses"), unsafe_allow_html=True)
+            for g in guesses:
+                correct = g.strip().lower() == answer["title"].strip().lower()
+                bg = "#1a5c38" if correct else "#5c1a1a"
+                icon = "✓" if correct else "✗"
+                st.markdown(
+                    f'<div style="background:{bg};border-radius:4px;padding:7px 14px;'
+                    f'margin-bottom:5px;color:#fff;">{icon} {g}</div>',
+                    unsafe_allow_html=True,
+                )
+
+        # ── Game over banner ──────────────────────────────────────────────────
+
+        def _cg_result_card():
+            year = answer.get("release_year")
+            year_str = f" ({int(year)})" if pd.notna(year) else ""
+            score = answer.get("imdb_score")
+            genres = answer.get("genres", [])
+            genre_str = (
+                ", ".join(g.capitalize() for g in list(genres)[:3])
+                if genres is not None and len(genres) > 0
+                else "N/A"
+            )
+
+            if cg["won"]:
+                st.success(f"Correct in {num_guesses} guess(es)!  **{answer['title']}**{year_str}")
+            else:
+                st.error(f"The answer was  **{answer['title']}**{year_str}")
+
+            info_cols = st.columns(4)
+            with info_cols[0]:
+                st.metric("IMDb", f"{score:.1f}" if pd.notna(score) else "N/A")
+            with info_cols[1]:
+                st.metric("Type", answer.get("type", "N/A"))
+            with info_cols[2]:
+                st.metric("Genre(s)", genre_str if genre_str else "N/A")
+            with info_cols[3]:
+                st.metric("Year", int(year) if pd.notna(year) else "N/A")
+
+            if has_backdrop:
+                st.markdown(_cg_blurred_img_html(answer["backdrop_url"]), unsafe_allow_html=True)
+
+            if st.button("Play Again", type="primary", key="cg_play_again"):
+                _cg_init_game("daily" if mode_choice == "Daily Challenge" else "random")
+                st.rerun()
+
+        if cg["game_over"]:
+            _cg_result_card()
+
+        # ── Guess input ───────────────────────────────────────────────────────
+
+        elif not cg["game_over"]:
+            st.divider()
+            guesses_left = _CG_MAX_GUESSES - num_guesses
+            st.markdown(
+                f"**Guess {num_guesses + 1} of {_CG_MAX_GUESSES}** &nbsp;—&nbsp; "
+                f"{guesses_left} guess(es) remaining",
+                unsafe_allow_html=True,
+            )
+
+            _pool = _cg_filtered_pool(_game_df, answer, clues_revealed)
+            all_titles = [""] + sorted(_pool["title"].dropna().unique().tolist())
+            if clues_revealed > 0:
+                st.caption(f"Pool narrowed to {len(all_titles) - 1} title(s) matching revealed clues.")
+
+            guess_val = st.selectbox(
+                "Select a title",
+                options=all_titles,
+                key=f"cg_guess_{num_guesses}",
+                label_visibility="collapsed",
+            )
+
+            col_submit, col_skip = st.columns([2, 1])
+            with col_submit:
+                if st.button(
+                    "Submit Guess",
+                    disabled=not guess_val,
+                    type="primary",
+                    use_container_width=True,
+                    key="cg_submit",
+                ):
+                    if len(cg["guesses"]) == num_guesses:
+                        cg["guesses"].append(guess_val)
+                        if guess_val.strip().lower() == answer["title"].strip().lower():
+                            cg["game_over"] = True
+                            cg["won"] = True
+                        elif len(cg["guesses"]) >= _CG_MAX_GUESSES:
+                            cg["game_over"] = True
+                            cg["won"] = False
+                    st.rerun()
+
+            with col_skip:
+                if st.button("Skip (count as wrong)", use_container_width=True, key="cg_skip"):
+                    if len(cg["guesses"]) == num_guesses:
+                        cg["guesses"].append("— skipped —")
+                        if len(cg["guesses"]) >= _CG_MAX_GUESSES:
+                            cg["game_over"] = True
+                            cg["won"] = False
+                    st.rerun()
+
+        # ── Progress bar ──────────────────────────────────────────────────────
+
+        st.markdown("&nbsp;", unsafe_allow_html=True)
+        progress_pct = num_guesses / _CG_MAX_GUESSES
+        bar_color = CARD_ACCENT if not cg["game_over"] else ("#1a5c38" if cg["won"] else "#8b0000")
+        st.markdown(
+            f"""
+            <div style="background:#333;border-radius:4px;height:6px;margin-top:4px;">
+                <div style="background:{bar_color};width:{progress_pct*100:.0f}%;height:6px;border-radius:4px;"></div>
+            </div>
+            <div style="color:#888;font-size:0.75rem;margin-top:4px;">
+                {num_guesses} / {_CG_MAX_GUESSES} guesses used
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 # =============================================================================
 # FOOTER
