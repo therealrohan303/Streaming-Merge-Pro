@@ -12,6 +12,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 from pathlib import Path
 
+from src.analysis.scoring import compute_quality_score
 from src.data.loaders import load_all_platforms_credits, load_all_platforms_titles, load_person_stats
 
 # ── Platform colours (shared across all tabs) ─────────────────────────────────
@@ -43,18 +44,22 @@ def get_head_to_head_stats(pid, person_stats, credits_df, titles_df):
     p = row.iloc[0]
 
     person_credits = credits_df[credits_df["person_id"] == pid].copy()
-    titles_slim = titles_df[["id","title","imdb_score","genres","platform"]].rename(
-        columns={"id": "title_id", "platform": "title_platform"}
-    )
+    score_cols = [c for c in ["id","title","imdb_score","imdb_votes","tmdb_popularity","genres","platform"] if c in titles_df.columns]
+    titles_slim = titles_df[score_cols].rename(columns={"id": "title_id", "platform": "title_platform"})
     merged = person_credits.merge(titles_slim, on="title_id", how="left")
 
     avg_imdb    = float(p.get("avg_imdb", 0) or 0)
     title_count = int(p.get("title_count", 0) or 0)
     influence   = float(p.get("influence_score", 0) or 0)
 
-    best_row = merged.nlargest(1, "imdb_score") if "imdb_score" in merged.columns else pd.DataFrame()
-    best_title = best_row.iloc[0]["title"] if not best_row.empty else None
-    best_imdb  = round(float(best_row.iloc[0]["imdb_score"]), 1) if not best_row.empty else None
+    if not merged.empty and "imdb_score" in merged.columns:
+        merged["quality_score"] = compute_quality_score(merged)
+        best_row = merged.nlargest(1, "quality_score")
+        best_title = best_row.iloc[0]["title"] if not best_row.empty else None
+        best_imdb  = round(float(best_row.iloc[0]["quality_score"]), 1) if not best_row.empty else None
+    else:
+        best_title = None
+        best_imdb  = None
 
     genre_diversity = 0
     if not merged.empty and "genres" in merged.columns:
@@ -73,7 +78,8 @@ def get_head_to_head_stats(pid, person_stats, credits_df, titles_df):
         platform_diversity = 0
 
     plat_counts = merged.groupby("title_platform").size() if (not merged.empty and "title_platform" in merged.columns) else pd.Series(dtype=int)
-    primary_platform = plat_counts.idxmax() if not plat_counts.empty else "Unknown"
+    _plat_key = plat_counts.idxmax() if not plat_counts.empty else "unknown"
+    primary_platform = PLAT_LABELS.get(_plat_key, str(_plat_key).title())
     netflix_count = int(plat_counts.get("netflix", 0))
     max_count     = int(plat_counts.get("max", 0))
 
@@ -796,8 +802,8 @@ with tab_wordle:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_arena:
-    TEAL = "#00b4d8"
-    GOLD = "#f39c12"
+    TEAL = "#00e5ff"
+    GOLD = "#ff9f1c"
 
     st.markdown("""
 <div style="text-align:center;padding:24px 0 8px;">
@@ -864,31 +870,37 @@ with tab_arena:
                     win_a, win_b = val_a > val_b, val_b > val_a
                 else:
                     win_a, win_b = val_a < val_b, val_b < val_a
-                color_a = TEAL if win_a else ("#ccc" if not win_b else "#666")
-                color_b = GOLD if win_b else ("#ccc" if not win_a else "#666")
-                bg_a = "rgba(0,180,216,0.08)" if win_a else "transparent"
-                bg_b = "rgba(243,156,18,0.08)" if win_b else "transparent"
-                badge_a = ' <span style="font-size:0.75rem;color:#aaa;">W</span>' if win_a else ""
-                badge_b = ' <span style="font-size:0.75rem;color:#aaa;">W</span>' if win_b else ""
-                icon = STAT_ICONS.get(label, "")
-                bar = ""
+                color_a = TEAL if win_a else ("#888" if not win_b else "#444")
+                color_b = GOLD if win_b else ("#888" if not win_a else "#444")
+                bg_a = f"rgba(0,229,255,0.10)" if win_a else "transparent"
+                bg_b = f"rgba(255,159,28,0.10)" if win_b else "transparent"
+                badge_a = f' <span style="font-size:0.7rem;font-weight:700;color:{TEAL};background:rgba(0,229,255,0.18);padding:1px 6px;border-radius:8px;margin-left:4px;">W</span>' if win_a else ""
+                badge_b = f' <span style="font-size:0.7rem;font-weight:700;color:{GOLD};background:rgba(255,159,28,0.18);padding:1px 6px;border-radius:8px;margin-left:4px;">W</span>' if win_b else ""
+                bar_a = bar_b = ""
                 if not is_str and val_a is not None and val_b is not None:
                     total = float(val_a or 0) + float(val_b or 0)
                     pct_a = (float(val_a) / total * 100) if total > 0 else 50
-                    bar = (
-                        f'<div style="height:3px;border-radius:2px;overflow:hidden;margin-top:6px;background:#1a1a1a;">'
-                        f'<div style="width:{pct_a:.1f}%;height:100%;background:{TEAL};float:left;"></div>'
-                        f'<div style="width:{100-pct_a:.1f}%;height:100%;background:{GOLD};float:left;"></div>'
+                    pct_b = 100 - pct_a
+                    bar_color_a = TEAL if win_a else "#2a3a40"
+                    bar_color_b = GOLD if win_b else "#3a2e18"
+                    bar_a = (
+                        f'<div style="height:4px;border-radius:2px;background:#111;margin-top:7px;overflow:hidden;">'
+                        f'<div style="width:{pct_a:.1f}%;height:100%;background:{bar_color_a};margin-left:auto;border-radius:2px;"></div>'
+                        f'</div>'
+                    )
+                    bar_b = (
+                        f'<div style="height:4px;border-radius:2px;background:#111;margin-top:7px;overflow:hidden;">'
+                        f'<div style="width:{pct_b:.1f}%;height:100%;background:{bar_color_b};border-radius:2px;"></div>'
                         f'</div>'
                     )
                 return (
                     f'<tr>'
-                    f'<td style="padding:14px 12px;border-bottom:1px solid #1e1e1e;text-align:center;vertical-align:middle;">'
-                    f'<span style="color:#666;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.8px;">{label}</span></td>'
-                    f'<td style="background:{bg_a};padding:14px 16px;border-bottom:1px solid #1e1e1e;text-align:right;vertical-align:middle;">'
-                    f'<span style="color:{color_a};font-weight:{"700" if win_a else "400"};font-size:1rem;">{val_a}{badge_a}</span>{bar}</td>'
-                    f'<td style="background:{bg_b};padding:14px 16px;border-bottom:1px solid #1e1e1e;text-align:left;vertical-align:middle;">'
-                    f'<span style="color:{color_b};font-weight:{"700" if win_b else "400"};font-size:1rem;">{val_b}{badge_b}</span></td>'
+                    f'<td style="padding:14px 12px;border-bottom:1px solid #1a1a1a;text-align:center;vertical-align:middle;">'
+                    f'<span style="color:#555;font-size:0.72rem;text-transform:uppercase;letter-spacing:0.8px;">{label}</span></td>'
+                    f'<td style="background:{bg_a};padding:14px 16px;border-bottom:1px solid #1a1a1a;text-align:right;vertical-align:middle;">'
+                    f'<span style="color:{color_a};font-weight:{"700" if win_a else "400"};font-size:1rem;">{val_a}{badge_a}</span>{bar_a}</td>'
+                    f'<td style="background:{bg_b};padding:14px 16px;border-bottom:1px solid #1a1a1a;text-align:left;vertical-align:middle;">'
+                    f'<span style="color:{color_b};font-weight:{"700" if win_b else "400"};font-size:1rem;">{val_b}{badge_b}</span>{bar_b}</td>'
                     f'</tr>'
                 )
 
@@ -924,15 +936,15 @@ with tab_arena:
                 battle_row("Primary Role",     stats_a["primary_role"],  stats_b["primary_role"],  is_str=True),
                 battle_row("Primary Platform", stats_a["primary_platform"], stats_b["primary_platform"], is_str=True),
                 battle_row("Career",           stats_a["career_str"],    stats_b["career_str"],    is_str=True),
-                battle_row("Best Title",
+                battle_row("Best Title (quality score)",
                     f"{stats_a['best_title']} ({stats_a['best_imdb']})" if stats_a["best_title"] else "—",
                     f"{stats_b['best_title']} ({stats_b['best_imdb']})" if stats_b["best_title"] else "—",
                     is_str=True),
                 *[battle_row(lbl, va, vb, hw) for lbl, va, vb, hw in comparisons],
             ])
 
-            score_badge_a = f'<div style="display:inline-block;background:rgba(0,180,216,0.15);color:{TEAL};font-size:0.75rem;padding:2px 8px;border-radius:12px;margin-top:4px;">{wins_a} wins</div>'
-            score_badge_b = f'<div style="display:inline-block;background:rgba(243,156,18,0.15);color:{GOLD};font-size:0.75rem;padding:2px 8px;border-radius:12px;margin-top:4px;">{wins_b} wins</div>'
+            score_badge_a = f'<div style="display:inline-block;background:rgba(0,229,255,0.15);color:{TEAL};font-size:0.75rem;padding:2px 8px;border-radius:12px;margin-top:4px;">{wins_a} wins</div>'
+            score_badge_b = f'<div style="display:inline-block;background:rgba(255,159,28,0.15);color:{GOLD};font-size:0.75rem;padding:2px 8px;border-radius:12px;margin-top:4px;">{wins_b} wins</div>'
 
             table_html = (
                 f'<table style="width:100%;border-collapse:collapse;margin-top:24px;border-radius:12px;overflow:hidden;border:1px solid #222;">'
