@@ -4,17 +4,12 @@ import pandas as pd
 
 from src.analysis.scoring import compute_quality_score
 from src.config import COMPARISON_TOP_GENRES, MERGED_PLATFORMS, PLATFORMS, QUALITY_TIERS
-
-# Genre keys that need special display names
-_GENRE_DISPLAY = {
-    "Documentation": "Documentary",
-    "Scifi": "Sci-Fi",
-}
+from src.ui.formatting import genre_display
 
 
 def _fix_genre_labels(index: pd.Index) -> pd.Index:
     """Apply special-case genre display names after title-casing."""
-    return index.map(lambda g: _GENRE_DISPLAY.get(g, g))
+    return index.map(lambda g: genre_display(g))
 
 
 def _explode_genres(df: pd.DataFrame) -> pd.DataFrame:
@@ -185,7 +180,7 @@ def compute_genre_heatmap(
     pivoted = pivoted.sort_values("_total", ascending=False).drop(columns="_total")
 
     # Title-case genre names for display, with special-case fixes
-    pivoted.index = _fix_genre_labels(pivoted.index.str.title())
+    pivoted.index = _fix_genre_labels(pivoted.index)
 
     # Ensure merged platform column is first
     merged_name = PLATFORMS["merged"]["name"]

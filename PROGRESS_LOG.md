@@ -1,5 +1,111 @@
 # Progress Log: Netflix + Max Merger Capstone
 
+## [2026-04-21] Franchise Explorer (Page 6 · Tab 2) polish pass
+
+### Done
+- **Load-more pagination.** Grid now renders 15 franchises by default with a centered "Load 15 more" button and "Showing N of M" counter. Filter changes (search/sort/min-titles) auto-reset to page 1 via `fe_filter_sig` session key.
+- **Clickable film titles → inline title card.** The poster strip is now a grid of Streamlit columns (6 per row) with a `View ▸` / `Hide ✕` button under each poster. Selected poster gets a gold accent border. Below the strip, the selected title renders an inline detail card that is a near-verbatim copy of the Explore Catalog pattern ([pages/01_Explore_Catalog.py:418-611](pages/01_Explore_Catalog.py#L418-L611)): poster (200px), title + award badge, 2×4 meta grid (Type/Year/IMDb/Platform + Rating/Runtime/Votes/Quality Score with colored progress bar), box office if enriched, genre pills, description, Cast & Crew expander with directors + 2-col actor grid + page_link to Cast/Crew Network. Deselecting a franchise clears the title selection.
+- **Quality-Over-Time chart upgrades.** Sorted by year; integer tick marks via `tickmode='linear', dtick=max(1,span//10)`; shaded quality bands (6.5–7.5 muted, 7.5–10 green-tinted) behind the data; dotted trajectory line (width 1.5) reads as "path" instead of "data"; marker sizes clipped to [8, 22] so blockbusters don't crush the rest; faint linear trendline via `np.polyfit` when ≥3 entries; enriched hover (title, year, IMDb, formatted votes, award count); subtitle "N entries · Y1–Y2 · X.X yr avg between releases" via `section_header_html`. Height bumped to 320.
+- **Franchise Gaps revamp.** Renamed to "Franchise Gaps — Acquisition Targets" with a concrete explainer. Added a top summary strip: "{N} franchises · {X} acquirable titles · Top gap +G". Each gap row is richer: platform distribution bar, `+N titles` chip, tier pill (`Acquisition target` for gap ≥5, `Partial gap` for 3–4), concrete copy "Prime Video holds 7 of 12 titles · Netflix+Max holds 2", and a "View franchise →" button that navigates to the detail panel. Top 8 shown by default, with a "Show all N gaps" toggle (`fe_show_all_gaps`).
+- **Cast & Crew Continuity (new section).** Between Platform Ownership and Health Score. Pulls credits via `load_all_platforms_credits`, groups by `person_id` (or `name`), counts distinct `title_id`s per role, surfaces only people appearing in ≥2 entries. Directors top 6 in gold chips, actors top 8 in blue chips (`Name · N films`). Deep link to Cast & Crew Network page. Muted fallback when no one recurs.
+- **Franchise Health Score expanded.** Replaced the lone tile with a two-column layout: big-number tier card on the left (Overall + label), "Driven By" breakdown on the right showing three progress bars (Quality 40%, Recency 30%, Prestige 30%) colored by threshold. All section headers inside the detail panel now use `section_header_html` instead of ad-hoc uppercase `<div>` labels.
+
+### Files touched
+- `pages/06_Interactive_Lab.py` (entire `with tab2:` block; session-state keys `fe_title_selected`, `fe_page_size`, `fe_filter_sig`, `fe_show_all_gaps`)
+
+### Verified
+- `python -c "import ast; ast.parse(...)"` clean
+- Headless streamlit smoke: Interactive Lab returns HTTP 200, no tracebacks in log
+
+---
+
+## [2026-04-21] Greenlight Studio polish pass 4 — award data fix + recency filter + pre-select honoured
+
+### Done
+- **Awards render correctly on talent cards.** The precomputed `award_title_count` in `data/precomputed/network/person_stats.parquet` was hard-zero because `scripts/12_precompute_network.py` joined against `all_platforms_titles.parquet`, which has no `award_wins` column. Added `_build_person_award_map(principals, enriched, credits)` in `src/analysis/lab.py` that derives counts at load time from `enriched.award_wins > 0`, covering both the principals namespace (writer/producer/composer) and the credits namespace (actor/director). Wired through `_get_person_award_map()` in `pages/06_Interactive_Lab.py`. Card now shows real counts (e.g. Scorsese 🏆 11, Benedict Cumberbatch 🏆 7, Matt Damon 🏆 12) instead of a flat 0.
+- **Recency + prominence filter.** `greenlight_talent_picks` now enforces `career_end >= 2010` AND `career_start >= 1960` to drop posthumous streaming credits that inflate career_end (e.g. Alec Guinness showing 2022). Also requires `influence_score > 0` (connected to the collaboration graph) and prominence ≥ 50th percentile of the filtered peer set — removes low-signal "barely left a mark" profiles. For drama/crime directors this now surfaces Scorsese, Coen, Nolan, PTA, Hideaki Anno; for actors: Cumberbatch, DiCaprio, Harrison Ford, Dustin Hoffman, Matt Damon.
+- **Actor top-titles + keyword map now populated.** The `imdb_principals` file only contains writer/producer/director/cinematographer/composer, so actors were missing from the Bayesian top-title map — cards showed "Deep catalog, no single standout." Extended `_build_person_top_title_map`, `_build_person_keyword_map`, `_build_person_award_map` to also accept `all_platforms_credits`, merging on `title_id → enriched.id`. Tom Hanks → *Forrest Gump*, Leonardo DiCaprio → *The Departed*, Harrison Ford → *The Empire Strikes Back*.
+- **Name-level dedup.** Talent picks now deduplicate by `name` after ranking (same person can have multiple `person_id` entries when they appear in both credits and principals namespaces). Scorsese no longer surfaces twice.
+- **Cast & Crew pre-select honoured.** [pages/07_Cast_Crew_Network.py](pages/07_Cast_Crew_Network.py) now reads `st.session_state["net_seed"]` early and, if the incoming person is connected to the graph but not in the top-5000-by-title-count seed pool, injects them into `seed_ids` and `_seed_label_map` so the selectbox can display them. Previously the selectbox silently fell back to the default when the incoming pid wasn't in options.
+
+## [2026-04-20] Greenlight Studio polish pass 3 — card wording + talent redesign
+
+### Done
+- **Friendlier wording in stat cards.** Replaced percentile/quartile jargon (`p25 · 6.2`, `median · 6.8`, `p90 · 7.6`, `Range · 6.6 – 7.5`) with plain-English framing on the IMDb score card: ticks now read "Weakest peers / Typical / Hit tier" with the value below each label; the range sits beneath the headline as "Could land anywhere between X.X and X.X once audiences weigh in." Footer rephrased to "Benchmarked against N {Genre} titles that cleared 500 IMDb votes." Box-office range line swapped from "p25–p75 range · $190M – $420M" to "Most comparable releases land between $190M and $420M."
+- **Bayesian-weighted top title.** `_build_person_top_title_map` in `src/analysis/lab.py` now scores candidate titles with the same `bayesian_imdb()` shrinkage used on the Home page (`src/analysis/scoring.py`) and returns vote counts alongside the title. Scorsese's top pick is now *GoodFellas* (1990, IMDb 8.7 · 1.2M votes) instead of a low-vote 9.x outlier; Satyajit Ray → *Pather Panchali* (1955, 8.3 · 34K), Bergman → *The Seventh Seal*, Ozu → *Tokyo Story*. Vote floor lowered to ≥ 250 since Bayesian shrinkage now handles noise.
+- **Standardized talent card redesign.** Dropped the `⭐ 1 / ⭐ 2 / ⭐ 3` rank badges. Every card now has a fixed `min-height: 300px`, consistent 10px radius, and the same structural scaffold:
+  - Header: name + one-line subtitle (*Crime veteran · 26 catalog titles*).
+  - Standard **pill row** with three pills in the same order on every card: `IMDb avg X.X` (colored by score), `🏆 N award title(s)` (gold when > 0, muted when 0), and a prominence tier (`Top N% in field` / `Established voice` / `Emerging`) derived from the same percentile-normed prominence score used in the ranking formula.
+  - **Known for** block (dashed divider + uppercase label) with the Bayesian-weighted top title, year, IMDb, and vote count formatted via `format_votes()`. Renders "Deep catalog, no single standout" when no title matches, so every card still occupies the same vertical space.
+  - **Shared tones** block with matched tones rendered as soft blue pills; falls back to "Broad tonal range — no single-lane bias." when no tones overlap.
+  - Action button **"Explore collaboration network →"** spans the card width (`use_container_width=True`).
+- **Click-through to Cast & Crew page.** The action button sets `st.session_state["net_seed"] = person_id` and calls `st.switch_page("pages/07_Cast_Crew_Network.py")`, landing on the Collaboration Network tab with the chosen person already loaded (the existing selectbox on page 7 reads `net_seed` from session state).
+
+### Files touched
+- `src/analysis/lab.py` (`_build_person_top_title_map` — Bayesian weighting, vote field)
+- `pages/06_Interactive_Lab.py` (IMDb card + box-office card wording, new `_talent_pill` helper, full `_render_person_card_v2` rebuild, switch_page wiring)
+
+### Verified
+- Headless streamlit smoke: Home + Interactive Lab both return HTTP 200, no tracebacks.
+- Top-title sanity: Scorsese→GoodFellas (1.18M votes), Nolan→The Dark Knight, Tarantino→Pulp Fiction.
+
+---
+
+## [2026-04-20] Greenlight Studio polish pass 2 (Page 6 · Tab 1)
+
+### Done
+- **Shared genre display helper** `src/ui/formatting.py` (`genre_display`, `genre_list_display`). `scifi` → "Sci-Fi", `documentation` → "Documentary", else `.title()`. Migrated `_GENRE_DISPLAY` out of `src/analysis/comparisons.py` so every page renders the same capitalized labels.
+- **Continuous budget slider** (2–400 $M, $1M step) replaces the 4-option selectbox. Threads `budget_usd` straight into `features_dict` for the stacked predictor and box-office lookup; int `budget_tier` (1/2/3/4) still derived for the categorical feature + UI chip.
+- **Smooth kNN box-office projection** (`_compute_box_office_lookup` + `greenlight_box_office` in `src/analysis/lab.py`). Long-form comp dataframe (N≈1100) replaces the discrete bucket groupby. At projection time: relaxation ladder `tight → genre_only → cert_only → global` (≥20 comps); weighted ROI quantiles via Gaussian kernel `exp(-(Δlog-budget)²/(2·0.5²))`; empirical franchise/adaptation multipliers from matched comp set clipped to [0.9, 1.6]/[0.9, 1.4]. Verified smooth response: $80→$110→$150→$190→$250M → $142→$240→$330→$418→$550M (strictly monotone, no bucket snap). Franchise lever visible: Original $330M → Franchise $423M (+28%) → Adaptation $462M (+40%).
+- **Box-office card rebuild** — ditched the raw multiplier string. Structured two-column layout: big headline + p25–p75 range + IP chip; "What drives this projection" table with Budget / Catalog ROI (genre) / Quality adjustment / Franchise entry lift rows, suppressing any row whose multiplier equals 1.00; concrete footnote "Based on N {Genre} releases between $XM–$YM"; muted relaxation caveat only when the tight cell wasn't used.
+- **IMDb score card polish** — removed "stacked GBM + SVD-Ridge · CV RMSE 0.47" technical diagnostic from the card footer. Replaced numeric scale ticks with labeled percentile ticks (p25 / median / p90) computed from the peer dict. Cleaner two-line headline with range below.
+- **Platform Fit polish** — rationale uses `genre_list_display` across all selected genres ("Max is the strongest fit for your Drama & Crime concept — its catalog indexes 1.8× the industry prestige rate in those genres"). IMDb-mean trailer dropped when within 0.3 of industry avg. ⭐ yaxis prefix replaced with `marker_line_color=#FFFFFF` / `width=3` on the top bar + inline "BEST FIT" text tag. Score-breakdown expander columns renamed to plain English (Prestige match / Quality fit / Type mix / Budget fit / Platform avg IMDb).
+- **Talent ranking rebuild** (`greenlight_talent_picks`). Dedup by `person_id` keeping highest `title_count`. Floors raised to `title_count ≥ 5` (dir) / `≥ 6` (actor). New prominence term `0.5·pct_rank(pagerank) + 0.5·pct_rank(influence_score)` normalized within filtered peer subset. New `tone_relevance` via keyword intersection between selected tones and the person's top-5-title `tmdb_keywords ∪ top_tags` (precomputed `_build_person_keyword_map`). Rank = 0.30·prominence + 0.25·quality + 0.20·genre + 0.15·awards + 0.10·tone. **Dropped `merger_bonus` entirely.** Verified: drama+crime+prestige/gritty returns Scorsese / Bergman / Nolan / Tarantino / Ozu — no duplicates, all household names.
+- **Representative title attachment** — new `_build_person_top_title_map` helper joins `imdb_principals → titles_enriched` on imdb_id (≥500 votes) and returns highest-IMDb title per person as `{title, year, imdb}`.
+- **Talent card rebuild** — rank badge (⭐1/⭐2/⭐3 for top three), IMDb colored badge, 🏆 award glyph only when `award_titles > 0`, concrete "{Display genre} veteran · N titles" line, "Known for: {Title} ({Year} · IMDb X.X)" line, "Matches N of your tones: {Tone, Tone}" line shown only when `tone_relevance > 0`. **Removed** the "Netflix/Max veteran" chip (contradicted Platform Fit when it pointed elsewhere) and the `NetflixPrimeDisney+Max` pill strip.
+- **Genre display threaded through** similar-title pills, model-card feature labels (`genre_*` and `gpair_*`), box-office genre name, platform-fit rationale, peer band label.
+
+### Files touched
+- `src/ui/formatting.py` (new)
+- `src/analysis/comparisons.py` (imports from formatting)
+- `src/analysis/lab.py` (box office lookup + projection + talent ranking + person maps)
+- `pages/06_Interactive_Lab.py` (all six output cards rebuilt, budget slider, genre threading)
+
+### Next
+- [ ] Manual browser smoke on 3 concepts (gritty crime drama, family animation, scifi blockbuster)
+- [ ] Confirm Franchise Explorer + Draft Room untouched
+
+---
+
+## [2026-04-20] Greenlight Studio full revamp (Page 6 · Tab 1)
+
+### Done
+- **Retrained predictors** (new `scripts/11_train_greenlight_models.py`). Stacked LightGBM + Ridge over ~90 features: 19 genre one-hots, 8 pairwise genre interactions, 12 tone-cluster binaries, 40 TruncatedSVD components on catalog TF-IDF, runtime + runtime², franchise_type one-hots, cert×budget interaction, budget_log, decade ordinal, production-country tier. Target is Bayesian-shrunk IMDb (`bayesian_imdb`, m=10000, C=6.5). Adaptation labels derived from `tmdb_keywords` tokens (based-on-novel/comic/true-story/video-game/play/remake/reboot). New movie+show pickles carry `feature_names_`, `svd_`, `tone_vocab_`, `cv_rmse_`, `baseline_rmse_`, `global_mean_`, `training_size_`, and per-genre percentile dict `genre_percentiles_`.
+- **New importable class** `src/analysis/greenlight_model.py` (`GreenlightStackedModel`) so joblib resolves the pickle inside Streamlit.
+- **Rebuilt `predict_title()`** in `src/analysis/lab.py` to accept `description` + `tone_selection`, compute SVD features and tone binaries at inference, and return peer-relative tier (`top_10`/`upper_quartile`/`above_median`/`below_median`/`bottom_quartile`) plus the peer p25/p50/p75/p90 dict.
+- **New helpers in `src/analysis/lab.py`**:
+  - `greenlight_similar_titles()` — TF-IDF cosine (0.55) + genre overlap frac (0.25) + quality norm (0.10) + tone match (0.10), with soft +0.05 franchise-match boost. Hard filters: type, ≥1 genre overlap, imdb_votes ≥ 500, runtime ±40/±20 min, budget tier ±1.
+  - `greenlight_platform_fit()` — grounded 0–100 score per platform: 40% prestige_per_1k from `prestige_index.parquet`, 25% quality alignment vs platform×genre IMDb mean, 20% type fit, 15% budget fit (movies; redistributed for shows).
+  - `greenlight_talent_picks()` — uses `person_stats.parquet` directly (fixes the `Column(s) ['platform'] do not exist` error). Genre-locked, quality-gated, ranked 0.35·genre + 0.30·quality + 0.20·awards + 0.15·merger_bonus.
+  - `_compute_box_office_lookup()` + `greenlight_box_office()` — empirical ROI p25/p50/p75 by (genre, budget_tier, cert_tier) with ≥15-sample floor, falls back to budget-tier global; quality multiplier tied to genre percentile; franchise multiplier from median ROI of `collection_name.notna()` vs originals.
+- **New loader** `load_prestige_index()` in `src/data/loaders.py`.
+- **Rewrote Tab 1 UI** (`pages/06_Interactive_Lab.py`, lines 292–891): removed release-year slider (silently sets 2026/2020 for the model), removed vague country/cert radios, added 3-way Audience (Family/Teen/Mature), 2-way Origin (US-led/International), Tone multiselect (max 3) from 12-label palette, IP status 3-way (Original/Franchise entry/Adaptation), 4-tier budget segmented control. Results pane: peer-relative IMDb card with confidence band + genre median tick, empirical Box Office card (movies), 6-comp Similar Titles grid with Why pill, horizontal Platform Fit bar chart with per-component breakdown expander, Directors + Cast two-column talent grid, honest Model Card expander showing CV RMSE and improvement vs baseline. Catalog Gap Signal removed.
+- **Verified end-to-end** outside Streamlit on three contrived concepts (gritty crime drama / family animation / blockbuster scifi) — predictions, comps, platform fit, box office, and talent all populate and react to inputs. Streamlit headless smoke test returns 200 on both Home and Interactive Lab with no tracebacks.
+
+### Files touched
+- `scripts/11_train_greenlight_models.py` (new)
+- `src/analysis/greenlight_model.py` (new)
+- `src/analysis/lab.py`
+- `src/data/loaders.py`
+- `pages/06_Interactive_Lab.py`
+
+### Next
+- [ ] Manual browser smoke: toggle every input and confirm each output moves
+- [ ] Check show-branch (no budget/IP) renders cleanly
+- [ ] Confirm Tabs 2 + 3 unchanged
+
+---
+
 ## [2026-04-17] Greenlight Studio results rebuild (Page 6 · Tab 1)
 
 ### Done

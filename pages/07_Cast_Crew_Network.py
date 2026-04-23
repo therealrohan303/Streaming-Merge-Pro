@@ -479,6 +479,22 @@ with tab_net:
         for row in seed_pool.itertuples(index=False)
     }
 
+    # Honor an incoming pre-selection from other pages (e.g. Greenlight Studio
+    # talent cards). If the person_id is connected to the graph but not already
+    # in the top-5000 seed_pool, inject it so the selectbox can display them.
+    _incoming_pid = st.session_state.get("net_seed")
+    if _incoming_pid and _incoming_pid in connected_ids and _incoming_pid not in seed_ids:
+        _row = net_person_stats[net_person_stats["person_id"] == _incoming_pid].head(1)
+        if not _row.empty:
+            _r = _row.iloc[0]
+            seed_ids.insert(0, _incoming_pid)
+            _seed_label_map[_incoming_pid] = (
+                f"{_r['name']}  ({str(_r['primary_role']).title()}, {int(_r['title_count'])} titles)"
+            )
+            default_seed = _incoming_pid
+    elif _incoming_pid and _incoming_pid in seed_ids:
+        default_seed = _incoming_pid
+
     col_s, col_d, col_m = st.columns([4, 1, 1])
     with col_s:
         seed_pid = st.selectbox(

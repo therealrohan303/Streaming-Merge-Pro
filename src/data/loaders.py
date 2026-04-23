@@ -158,6 +158,18 @@ def load_person_stats() -> pd.DataFrame:
 
 
 @st.cache_resource
+def load_prestige_index() -> pd.DataFrame:
+    """Precomputed (platform, genre) prestige table used by Greenlight Studio's platform fit."""
+    path = PRECOMPUTED_DIR / "strategic_analysis" / "prestige_index.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+    return pd.DataFrame(columns=[
+        "platform", "genre", "title_count", "award_wins", "award_noms",
+        "titles_with_awards", "prestige_per_1k", "coverage",
+    ])
+
+
+@st.cache_resource
 def load_greenlight_model(model_type: str):
     """Load trained greenlight predictor model.
 
