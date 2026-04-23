@@ -288,7 +288,7 @@ def _render_pyvis(node_ids: frozenset, edge_triples: frozenset, seed_id: str) ->
         )
         net.add_node(
             pid, label=row["name"], title=tooltip,
-            size=node_size(row["title_count"]) * (1.4 if is_seed else 1),
+            size=node_size(row["title_count"]) * (0.8 if is_seed else 1),
             shape="star" if is_seed else "dot",
             color={"background": SEED_COLOR if is_seed else color,
                    "border":     SEED_COLOR if is_seed else color,
