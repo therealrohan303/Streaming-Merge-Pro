@@ -15,13 +15,10 @@ python-dotenv~=1.0
 python-louvain~=0.16  # community detection (import community)
 
 # ML/NLP
-sentence-transformers~=2.2  # For embeddings
-umap-learn~=0.5  # For dimensionality reduction
+umap-learn~=0.5
 
 # Visualization
 plotly~=5.17
-matplotlib~=3.7
-seaborn~=0.12
 
 # Network Analysis (for Cast & Crew page)
 networkx~=3.1
