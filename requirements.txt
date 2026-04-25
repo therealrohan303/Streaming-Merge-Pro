@@ -9,6 +9,10 @@ pyarrow~=14.0  # For parquet file support
 # Data Processing
 scikit-learn~=1.3
 scipy~=1.11
+requests~=2.31
+joblib~=1.3
+python-dotenv~=1.0
+python-louvain~=0.16  # community detection (import community)
 
 # ML/NLP
 sentence-transformers~=2.2  # For embeddings

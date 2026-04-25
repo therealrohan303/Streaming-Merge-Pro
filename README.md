@@ -33,6 +33,10 @@ python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 
 pip install -r requirements.txt
+
+# Create required data directories (not tracked in git)
+mkdir -p data/raw/imdb data/raw/movielens data/interim data/processed \
+         data/enriched data/precomputed data/cache models
 ```
 
 ---
@@ -43,7 +47,7 @@ Complete all 4 steps before running the pipeline.
 
 ### 1. Platform Catalogs
 
-Download the 6-platform streaming dataset from Kaggle and place **12 CSV files** in `data/raw/`:
+Search Kaggle for the **JustWatch streaming catalogs** dataset (by dgoenrique) — it contains separate titles and credits CSVs for each platform following the exact schema below. Place the **12 CSV files** in `data/raw/`:
 
 ```
 netflix_titles.csv   netflix_credits.csv
@@ -111,7 +115,7 @@ python scripts/06_enrich_wikidata.py         # Awards, budget, box office → da
 python scripts/07_enrich_movielens.py        # Genre genome tag vectors → data/enriched/
 python scripts/08_enrich_tmdb.py             # Posters, keywords, franchises → data/enriched/
 python scripts/09_build_enriched_titles.py   # Join all enrichment → data/enriched/titles_enriched.parquet
-python scripts/10_train_greenlight_predictor.py  # Train IMDb score predictor → models/
+python scripts/10_train_predictor.py             # Train IMDb score predictor → models/
 python scripts/11_precompute_strategic.py    # Prestige index + acquisition targets → data/precomputed/
 python scripts/12_precompute_network.py      # Collaboration graph + PageRank → data/precomputed/
 ```
