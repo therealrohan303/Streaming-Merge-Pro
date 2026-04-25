@@ -29,7 +29,6 @@ from src.data.loaders import (
     load_merged_titles,
 )
 from src.ui.badges import (
-    page_header_html,
     platform_badges_html,
     section_header_html,
     styled_banner_html,
@@ -85,10 +84,23 @@ credits_df = get_credits_for_view(filters["platform_view"])
 # ── title ────────────────────────────────────────────────────────────────────
 
 st.markdown(
-    page_header_html(
-        "Netflix + Max Merger Analysis",
-        "Hypothetical merger analysis across streaming platforms",
-    ),
+    """
+<div style="
+    text-align:center;
+    padding:2.8rem 2rem 2.2rem 2rem;
+    margin-bottom:2rem;
+    background:radial-gradient(ellipse at 50% 0%, rgba(0,180,166,0.12) 0%, rgba(30,30,46,0) 65%);
+    border-bottom:3px solid #00B4A6;
+    border-radius:4px;
+">
+  <div style="font-size:3.8em;font-weight:900;letter-spacing:-1.5px;line-height:1.0;margin-bottom:0.7rem;">
+    <span style="color:#FFFFFF;">Stream</span><span style="color:#00B4A6;">Merge</span><span style="color:#FFD700;font-size:0.6em;font-weight:700;vertical-align:middle;margin-left:8px;letter-spacing:0px;">PRO</span>
+  </div>
+  <div style="font-size:0.8em;color:#888;letter-spacing:0.14em;text-transform:uppercase;font-weight:500;">
+    Netflix &times; Max &nbsp;&middot;&nbsp; 6 Platforms &nbsp;&middot;&nbsp; ~25,000 Titles &nbsp;&middot;&nbsp; ML-Powered
+  </div>
+</div>
+""",
     unsafe_allow_html=True,
 )
 

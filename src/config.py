@@ -121,7 +121,7 @@ NETWORK_MIN_EDGE_WEIGHT = 1  # Min shared titles for an edge
 # =============================================================================
 
 # Page configuration
-PAGE_TITLE = "Netflix + Max Merger Analysis"
+PAGE_TITLE = "StreamMerge Pro"
 PAGE_ICON = "📊"
 LAYOUT = "wide"
 INITIAL_SIDEBAR_STATE = "expanded"
