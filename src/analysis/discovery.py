@@ -654,9 +654,16 @@ def mood_board_recommendations(
                 is_incompatible = bool(title_genres & compat["incompatible"])
                 if is_incompatible and not has_required:
                     mood_hit *= _MOOD_GENRE_PENALTY
-            if mood_hit > 0:
+            # Rescale by available signal weight so genre-only titles aren't
+            # unfairly penalised vs enriched titles. A title with no kw/tag data
+            # can only earn at most 0.40 from genre; rescaling maps that to 1.0.
+            available_weight = (0.40
+                + (0.40 if title_kws else 0.0)
+                + (0.20 if title_tags else 0.0))
+            mood_hit_scaled = mood_hit / available_weight if available_weight > 0 else 0.0
+            if mood_hit_scaled > 0:
                 matched.append(mc["label"])
-                total_score += mood_hit
+                total_score += mood_hit_scaled
 
         normalized = total_score / len(mood_configs) if mood_configs else 0.0
         return matched, normalized

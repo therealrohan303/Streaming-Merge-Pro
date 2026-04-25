@@ -918,8 +918,8 @@ div[data-testid="stVerticalBlock"] div[data-testid="column"] > div > div > div >
     # ── Render mood results (from session state — persists across reruns) ──
     _mood_results = st.session_state.get("mood_results")
     if _mood_results is not None and not _mood_results.empty:
-        _primary_mood   = _mood_results[_mood_results["mood_match_pct"] >= 0.5]
-        _secondary_mood = _mood_results[_mood_results["mood_match_pct"] <  0.5]
+        _primary_mood   = _mood_results[_mood_results["mood_match_pct"] >= 0.35]
+        _secondary_mood = _mood_results[_mood_results["mood_match_pct"] <  0.35]
         n_m = len(_primary_mood)
         st.markdown(
             styled_banner_html(
@@ -973,7 +973,7 @@ div[data-testid="stVerticalBlock"] div[data-testid="column"] > div > div > div >
 
         if not _secondary_mood.empty:
             with st.expander(
-                f"Also worth considering — {len(_secondary_mood)} looser matches (<50% mood fit)",
+                f"Also worth considering — {len(_secondary_mood)} looser matches",
                 expanded=False,
             ):
                 _render_mood_card_rows(_secondary_mood)
