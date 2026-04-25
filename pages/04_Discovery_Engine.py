@@ -918,13 +918,11 @@ div[data-testid="stVerticalBlock"] div[data-testid="column"] > div > div > div >
     # ── Render mood results (from session state — persists across reruns) ──
     _mood_results = st.session_state.get("mood_results")
     if _mood_results is not None and not _mood_results.empty:
-        _primary_mood   = _mood_results[_mood_results["mood_match_pct"] >= 0.35]
-        _secondary_mood = _mood_results[_mood_results["mood_match_pct"] <  0.35]
-        n_m = len(_primary_mood)
+        n_m = len(_mood_results)
         st.markdown(
             styled_banner_html(
                 "✓",
-                f"Showing {n_m} strong mood matches (min IMDb 6.0, min 1,000 votes)",
+                f"Showing {n_m} mood matches (min IMDb 6.0, min 1,000 votes)",
                 bg="rgba(46,204,113,0.1)", border_color="#2ecc71",
             ),
             unsafe_allow_html=True,
@@ -969,14 +967,7 @@ div[data-testid="stVerticalBlock"] div[data-testid="column"] > div > div > div >
                 if st.session_state.discovery_detail_id == mid:
                     _render_title_detail(mid)
 
-        _render_mood_card_rows(_primary_mood)
-
-        if not _secondary_mood.empty:
-            with st.expander(
-                f"Also worth considering — {len(_secondary_mood)} looser matches",
-                expanded=False,
-            ):
-                _render_mood_card_rows(_secondary_mood)
+        _render_mood_card_rows(_mood_results)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
